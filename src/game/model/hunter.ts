@@ -9,6 +9,9 @@ export class Hunter extends Ship {
   updateBehavior(dt: number, _friends: Ship[], opponents: Ship[]): ShotEffect | undefined {
     if (!this.isAlive() || !this.home) 
       return undefined;
+
+    if (this.launching)
+      return undefined;
     
     this.shotCooldown = Math.max(0, this.shotCooldown - dt);
 

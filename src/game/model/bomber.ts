@@ -9,6 +9,9 @@ export class Bomber extends Ship {
     if (!this.isAlive() || !this.home) 
       return undefined;
 
+    if (this.launching)
+      return undefined;
+
 
 
     this.shotCooldown = Math.max(0, this.shotCooldown - dt);

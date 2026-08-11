@@ -44,7 +44,7 @@ export class Planet {
   update(dt: number) {
     for (let i = 0; i < this.parts.length; i += 1) {
       const part = this.parts[i];
-      part.update(dt, this.getIndustrySpawnPosition(i), this);
+      part.update(dt, this.getIndustryPosition(i), this.getIndustrySpawnPosition(i), this);
       if (part instanceof IndustryConstruction && part.isComplete()) this.parts[i] = part.getFactory();
     }
   }

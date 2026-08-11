@@ -8,6 +8,9 @@ export class Colonizer extends Ship {
 
     if (!this.isAlive() || !this.home) 
       return undefined;
+
+    if (this.launching)
+      return undefined;
     
     const targetPlanet = this.home.getTargetPlanet();
     

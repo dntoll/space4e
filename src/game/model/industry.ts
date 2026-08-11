@@ -2,7 +2,7 @@ import type { Planet } from './planet.ts';
 import { Position } from './position.ts';
 
 export abstract class Industry {
-  abstract update(dt: number, position: Position, home: Planet): void;
+  abstract update(dt: number, position: Position, launchPosition: Position, home: Planet): void;
   getProgress() { return 0; }
 }
 

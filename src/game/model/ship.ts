@@ -28,6 +28,10 @@ export abstract class Ship {
   private orbitRadius = 0;
   private targetOrbitRadius = 0;
   private orbitAngle = 0;
+  protected launching = false;
+  private launchCenter?: Position;
+  private launchAltitude = 0;
+  private spreadAngularError = 0;
 
   constructor(public center: Position) { this.center = new Position(center.x, center.y); }
   setHome(home: Planet) { this.home = home; }
@@ -42,7 +46,7 @@ export abstract class Ship {
     this.goalSpeed = Math.max(0, goalSpeed ?? distance);
   }
   avoidPlanets(planets: Planet[]) {
-    if (this.isOrbiting() || !this.aimTarget) {
+    if (this.launching || this.isOrbiting() || !this.aimTarget) {
       this.avoidedPlanet = undefined;
       return;
     }
@@ -124,6 +128,15 @@ export abstract class Ship {
       this.forward = this.center.getDirectionTo(target);
     }
   }
+  launchFrom(home: Planet, launchPosition: Position) {
+    this.launching = true;
+    this.launchCenter = new Position(home.centerPosition.x, home.centerPosition.y);
+    this.launchAltitude = home.centerPosition.distanceTo(launchPosition);
+    this.setAimDirection(launchPosition);
+    if (this.center.distanceTo(launchPosition) > 0) {
+      this.forward = this.center.getDirectionTo(launchPosition);
+    }
+  }
   orbitAround(center: Position, orbitRadius: number) {
     if (!this.isOrbitingAround(center)) {
       this.orbitAngle = Math.atan2(this.center.y - center.y, this.center.x - center.x);
@@ -138,6 +151,50 @@ export abstract class Ship {
   isOrbiting() { return this.orbitCenter !== undefined; }
   isOrbitingAround(center: Position) { return this.orbitCenter !== undefined && this.orbitCenter.distanceTo(center) < 0.000001; }
 
+  spreadAlongOrbit(friends: Ship[]) {
+    if (!this.isOrbiting() || Math.abs(this.orbitRadius - this.targetOrbitRadius) > 0.000001) {
+      this.spreadAngularError = 0;
+      return;
+    }
+    const orbitCenter = this.orbitCenter!;
+    const settledRadius = this.orbitRadius;
+
+    const peers = friends.filter((ship) =>
+      ship.isAlive()
+      && ship.constructor === this.constructor
+      && ship.isOrbitingAround(orbitCenter)
+      && !ship.launching
+      && Math.abs(ship.orbitRadius - ship.targetOrbitRadius) <= 0.000001
+      && Math.abs(ship.center.distanceTo(orbitCenter) - settledRadius) <= 0.001,
+    );
+
+    if (peers.length < 2) {
+      this.spreadAngularError = 0;
+      return;
+    }
+
+    const angles = peers.map((ship) => Math.atan2(ship.center.y - orbitCenter.y, ship.center.x - orbitCenter.x));
+    const sinSum = angles.reduce((sum, angle) => sum + Math.sin(angle), 0);
+    const cosSum = angles.reduce((sum, angle) => sum + Math.cos(angle), 0);
+    const meanAngle = Math.atan2(sinSum, cosSum);
+
+    const sortedPeers = peers.slice().sort((a, b) => {
+      const relativeA = ((Math.atan2(a.center.y - orbitCenter.y, a.center.x - orbitCenter.x) - meanAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      const relativeB = ((Math.atan2(b.center.y - orbitCenter.y, b.center.x - orbitCenter.x) - meanAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      return relativeA - relativeB;
+    });
+
+    const slotCount = sortedPeers.length;
+    const slotStep = 2 * Math.PI / slotCount;
+    const myRank = sortedPeers.indexOf(this);
+    const myAngle = Math.atan2(this.center.y - orbitCenter.y, this.center.x - orbitCenter.x);
+
+    const targetAngle = meanAngle + (myRank - (slotCount - 1) / 2) * slotStep;
+    let error = ((targetAngle - myAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    if (Math.abs(error) < 0.0005) error = 0;
+    this.spreadAngularError = error;
+  }
+
   protected goToTargetPlanet() {
     if (!this.home) 
       return;
@@ -150,9 +207,17 @@ export abstract class Ship {
   update(dt: number) {
     if (!this.alive) return;
 
+    if (this.launching && this.launchCenter && this.center.distanceTo(this.launchCenter) >= this.launchAltitude) {
+      this.launching = false;
+    }
+
     const orbitCenter = this.orbitCenter;
     if (orbitCenter) {
-      this.speed = this.getOrbitSpeed(this.orbitRadius);
+      const naturalSpeed = this.getOrbitSpeed(this.orbitRadius);
+      const spreadFactor = this.spreadAngularError === 0
+        ? 1
+        : Math.min(2.5, Math.max(0.3, 1 + this.spreadAngularError));
+      this.speed = naturalSpeed * spreadFactor;
       const changingOrbitRadius = Math.abs(this.orbitRadius - this.targetOrbitRadius) > .000001;
       const radialSpeed = changingOrbitRadius ? this.speed / Math.sqrt(2) : 0;
       const tangentialSpeed = changingOrbitRadius ? this.speed / Math.sqrt(2) : this.speed;

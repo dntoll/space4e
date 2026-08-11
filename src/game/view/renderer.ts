@@ -145,22 +145,28 @@ export class Renderer {
     if (focus === planet) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
     planet.parts.forEach((part, index) => {
       if (part instanceof FreeIndustry) return;
-      const angle = index * 2 * Math.PI / planet.parts.length;
-      const factoryCenter = {
-        x: center.x + Math.cos(angle) * radius / 4,
-        y: center.y + Math.sin(angle) * radius / 4,
-      };
+      const factoryModelPosition = planet.getIndustryPosition(index);
+      const factoryCenter = this.camera.modelToView(factoryModelPosition);
+      const radial = new Direction(
+        factoryModelPosition.x - planet.centerPosition.x,
+        factoryModelPosition.y - planet.centerPosition.y,
+      );
+      const right = radial.getRight();
       const factorySize = radius / 4 * 0.7;
       const symbol = part instanceof IndustryConstruction ? part.getFactory() : part;
-      this.drawShipSymbol(ctx, factoryCenter, factorySize, symbol, '#555', new Direction(1, 0), new Direction(0, 1), !(part instanceof IndustryConstruction));
-      this.drawProgressBar(ctx, factoryCenter, factorySize, part.getProgress());
+      this.drawShipSymbol(ctx, factoryCenter, factorySize, symbol, '#555', radial, right, !(part instanceof IndustryConstruction));
+      const progressBarCenter = {
+        x: factoryCenter.x + radial.x * factorySize * 2.2,
+        y: factoryCenter.y + radial.y * factorySize * 2.2,
+      };
+      this.drawProgressBar(ctx, progressBarCenter, factorySize, part.getProgress());
     });
   }
   private drawProgressBar(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number, progress: number) {
     const width = size * 2;
     const height = Math.max(2, size * 0.25);
     const left = center.x - width / 2;
-    const top = center.y + size + 2;
+    const top = center.y - height / 2;
     ctx.fillStyle = '#202020';
     ctx.fillRect(left, top, width, height);
     ctx.fillStyle = '#f0d060';
@@ -258,8 +264,15 @@ export class Renderer {
       return;
     }
     if (ship instanceof BomberIndustry) {
-      if (filled) ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
-      else { ctx.strokeStyle = color; ctx.strokeRect(center.x - size, center.y - size, size * 2, size * 2); }
+      const front = { x: center.x + direction.x * size, y: center.y + direction.y * size };
+      const back = { x: center.x - direction.x * size, y: center.y - direction.y * size };
+      ctx.beginPath();
+      ctx.moveTo(front.x + right.x * size, front.y + right.y * size);
+      ctx.lineTo(front.x - right.x * size, front.y - right.y * size);
+      ctx.lineTo(back.x - right.x * size, back.y - right.y * size);
+      ctx.lineTo(back.x + right.x * size, back.y + right.y * size);
+      ctx.closePath();
+      if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
       return;
     }
     const front = { x: center.x + direction.x * size, y: center.y + direction.y * size };

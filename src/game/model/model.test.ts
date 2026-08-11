@@ -225,9 +225,9 @@ describe('spelvärld', () => {
     planet.update(2.1);
     planet.update(3.1);
     expect(ships).toHaveLength(1);
-    expect(ships[0].center.x).toBeCloseTo(planet.getIndustrySpawnPosition(0).x);
-    expect(ships[0].center.y).toBeCloseTo(planet.getIndustrySpawnPosition(0).y);
-    const expectedDirection = ships[0].center.getDirectionTo(target.centerPosition);
+    expect(ships[0].center.x).toBeCloseTo(planet.getIndustryPosition(0).x);
+    expect(ships[0].center.y).toBeCloseTo(planet.getIndustryPosition(0).y);
+    const expectedDirection = planet.centerPosition.getDirectionTo(planet.getIndustryPosition(0));
     expect(ships[0].direction.x).toBeCloseTo(expectedDirection.x);
     expect(ships[0].direction.y).toBeCloseTo(expectedDirection.y);
   });

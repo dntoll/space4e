@@ -9,13 +9,13 @@ export abstract class ShippingIndustry extends Industry {
   private currentShip?: Ship;
 
   constructor(protected allies: Ship[]) { super(); }
-  update(dt: number, position: Position, home: Planet) {
+  update(dt: number, position: Position, launchPosition: Position, home: Planet) {
     if (!this.currentShip || !this.currentShip.isAlive()) {
       this.timeToCompletion -= dt;
       if (this.timeToCompletion < 0) {
         this.currentShip = this.createShip(position);
         this.currentShip.setHome(home);
-        this.currentShip.faceTowards(home.getTargetPlanet().centerPosition);
+        this.currentShip.launchFrom(home, launchPosition);
         this.allies.push(this.currentShip);
       }
     }

@@ -20,8 +20,8 @@ export class Game {
       ship.avoidPlanets(this.space.planets);
       if (effect) this.shotEffects.push(effect);
     });
-    this.playerShips.forEach((ship) => ship.update(dt));
-    this.computerShips.forEach((ship) => ship.update(dt));
+    this.playerShips.forEach((ship) => { ship.spreadAlongOrbit(this.playerShips); ship.update(dt); });
+    this.computerShips.forEach((ship) => { ship.spreadAlongOrbit(this.computerShips); ship.update(dt); });
     this.space.update(dt);
     const uncontested = this.space.getPlanetsThatBelongTo(Owner.None);
     this.space.getPlanetsThatBelongTo(Owner.Computer).forEach((planet) => {
