@@ -1,6 +1,6 @@
 # Space – TypeScript/Vite
 
-Projektet är en beteendetrogen webbport av det tidigare Java/Swing-spelet. Spelkärnan ligger i `src/game/model.ts`, rendering sker med Canvas 2D och byggsystemet är npm/Vite.
+Projektet är en TypeScript-baserad spelwebbapp. Spelkärnan ligger i `src/game/model.ts`, rendering sker med Canvas 2D och byggsystemet är npm/Vite.
 
 ## Köra lokalt
 
@@ -17,7 +17,7 @@ npm test
 npm run build
 ```
 
-Klicka på en planet för att välja den och klicka sedan på en målplanet. Tangenterna `C`, `H` och `B`, eller knapparna längst ned på skärmen, bygger kolonisations-, jakt- respektive bombfartyg. Pointer Events används för mus och touch.
+Klicka på en planet för att välja den och klicka sedan på en målplanet. Dra med mus eller touch för att panorera. Tangenterna `C`, `H` och `B`, eller knapparna längst ned på skärmen, bygger kolonisations-, jakt- respektive bombfartyg. Panelen uppe till höger pausar med `SPACE`, väljer 1/10-hastighet (`›`) eller normal hastighet (`››`). Pointer Events används för mus och touch.
 
 ## Arkitektur
 

@@ -9,10 +9,15 @@
   <body>
     <main id="app" aria-label="Space-spel">
       <canvas id="game" tabindex="0"></canvas>
+      <section class="time-controls" aria-label="Tidskontroll">
+        <button data-command="pause">Paus (SPACE)</button>
+        <button data-command="slow">›</button>
+        <button data-command="normal">››</button>
+      </section>
       <div class="controls" aria-label="Byggkontroller">
-        <button data-command="c">Bygg kolonisationsskepp (C)</button>
-        <button data-command="h">Bygg jaktfartyg (H)</button>
-        <button data-command="b">Bygg bombfartyg (B)</button>
+        <button data-command="colonizer">Bygg kolonisationsskepp (C)</button>
+        <button data-command="hunter">Bygg jaktfartyg (H)</button>
+        <button data-command="bomber">Bygg bombfartyg (B)</button>
       </div>
     </main>
     <script type="module" src="/src/main.ts"></script>
