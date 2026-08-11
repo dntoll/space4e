@@ -1,0 +1,32 @@
+plugins {
+    // Apply the application plugin to add support for building a CLI application in Java.
+    id 'application'
+}
+
+
+
+repositories {
+    // Use Maven Central for resolving dependencies.
+    mavenCentral()
+}
+
+run {
+  standardInput = System.in
+  
+}
+
+dependencies {
+    implementation files('jogamp-all-platforms/jar/gluegen.jar')
+    implementation files('jogamp-all-platforms/jar/gluegen-rt.jar')
+    implementation files('jogamp-all-platforms/jar/gluegen-rt-natives-windows-amd64.jar')
+    implementation files('jogamp-all-platforms/jar/jogl-all.jar') 
+    implementation files('jogamp-all-platforms/jar/jogl-all-natives-windows-amd64.jar') 
+}
+
+
+
+application {
+    // Define the main class for the application.
+    mainClass = 'space.Application'
+}
+
