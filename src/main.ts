@@ -10,7 +10,6 @@ const game = new Game();
 const input = new Input(canvas);
 const renderer = new Renderer(canvas, game);
 const controller = new Controller(game, renderer, input);
-renderer.focusOn(game.space.getPlanet(0));
 let previous = performance.now();
 let running = true;
 let paused = true;

@@ -7,6 +7,7 @@ export type ShotEffect = {
   to: Position;
   remaining: number;
   kind: 'shot' | 'bomb';
+  source?: Ship;
 };
 
 export abstract class Ship {
@@ -24,42 +25,61 @@ export abstract class Ship {
   constructor(public center: Position) { this.center = new Position(center.x, center.y); }
   setHome(home: Planet) { this.home = home; }
   updateBehavior(_dt: number, _friends: Ship[], _opponents: Ship[]): ShotEffect | undefined { return undefined; }
-  setAimDirection(target: Position) {
+  setAimDirection(target: Position, goalSpeed?: number) {
     this.orbitCenter = undefined;
     const distance = this.center.distanceTo(target);
-    if (distance > 0) { this.turnTo = this.center.getDirectionTo(target); this.goalSpeed = distance; } else this.goalSpeed = 0;
+    if (distance > 0) {
+      this.turnTo = this.center.getDirectionTo(target);
+    }
+    this.goalSpeed = Math.max(0, goalSpeed ?? distance);
   }
-  orbitAround(center: Position, radius: number) {
-    if (!this.orbitCenter) this.orbitAngle = Math.atan2(this.center.y - center.y, this.center.x - center.x);
+  faceTowards(target: Position) {
+    this.setAimDirection(target);
+    if (this.center.distanceTo(target) > 0) {
+      this.forward = this.center.getDirectionTo(target);
+    }
+  }
+  orbitAround(center: Position, orbitRadius: number) {
+    this.orbitAngle = Math.atan2(this.center.y - center.y, this.center.x - center.x);
     this.orbitCenter = new Position(center.x, center.y);
-    this.orbitRadius = radius;
-    this.speed = 0;
+    this.orbitRadius = orbitRadius;
+    this.speed = orbitRadius * 0.8;
   }
+
   isOrbiting() { return this.orbitCenter !== undefined; }
   isOrbitingAround(center: Position) { return this.orbitCenter !== undefined && this.orbitCenter.distanceTo(center) < 0.000001; }
-  protected goToTarget() {
-    if (!this.home) return;
+
+  protected goToTargetPlanet() {
+    if (!this.home) 
+      return;
+    
+    //should not orbit here, orbiting is handled in updateBehavior of Subclasses
     const target = this.home.getTargetPlanet();
-    if (this.isOrbitingAround(this.planetCenter(target))) return;
-    this.setAimDirection(target.position);
-    if (this.center.distanceTo(target.position) < target.radius) this.orbitAround(this.planetCenter(target), target.radius * 1.25);
-  }
-  protected planetCenter(planet: Planet) {
-    return new Position(planet.position.x + planet.radius / 2, planet.position.y + planet.radius / 2);
+    this.setAimDirection(target.centerPosition);
+   
   }
   update(dt: number) {
     if (!this.alive) return;
-    if (this.orbitCenter) {
-      this.orbitAngle += dt * 0.8;
-      this.center.x = this.orbitCenter.x + Math.cos(this.orbitAngle) * this.orbitRadius;
-      this.center.y = this.orbitCenter.y + Math.sin(this.orbitAngle) * this.orbitRadius;
+
+    const orbitCenter = this.orbitCenter;
+    if (orbitCenter) {
+      this.orbitAngle += dt * (this.orbitRadius > 0 ? this.speed / this.orbitRadius : 0.8);
+      this.center.x = orbitCenter.x + Math.cos(this.orbitAngle) * this.orbitRadius;
+      this.center.y = orbitCenter.y + Math.sin(this.orbitAngle) * this.orbitRadius;
       this.forward = new Direction(-Math.sin(this.orbitAngle), Math.cos(this.orbitAngle));
+
       return;
     }
+
     this.center.x += this.forward.x * dt * this.speed;
     this.center.y += this.forward.y * dt * this.speed;
-    if (this.forward.turnTowards(this.turnTo, dt * 30 * Math.PI / 180)) {
-      const change = dt;
+    const movingAwayFromTarget = this.forward.x * this.turnTo.x + this.forward.y * this.turnTo.y < 0;
+    const facingTarget = this.forward.turnTowards(this.turnTo, dt * 30 * Math.PI / 180);
+    const change = dt;
+
+    if (movingAwayFromTarget) {
+      this.speed = Math.max(0, this.speed - change);
+    } else if (facingTarget) {
       this.speed = this.speed > this.goalSpeed ? Math.max(this.goalSpeed, this.speed - change) : Math.min(this.goalSpeed, this.speed + change);
     }
   }

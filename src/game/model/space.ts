@@ -20,7 +20,7 @@ export class Space {
     while (ret.length < Space.NUM_PLANETS) {
       const position = new Position(random() * Space.SPACE_RADIUS * 2 - Space.SPACE_RADIUS, random() * Space.SPACE_RADIUS * 2 - Space.SPACE_RADIUS);
 
-      if (ret.some((planet) => planet.position.distanceTo(position) < 0.1)) {
+      if (ret.some((planet) => planet.centerPosition.distanceTo(position) < 0.1)) {
         continue;
       }
       if (position.y < yPosOfTopPlanet) {

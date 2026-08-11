@@ -90,15 +90,15 @@ export class Renderer {
     const ratio = window.devicePixelRatio || 1; ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.fillStyle = '#080b12'; ctx.fillRect(0, 0, this.camera.width, this.camera.height);
     this.game.space.planets.forEach((planet) => this.drawTargetArrow(ctx, planet));
     this.game.space.planets.forEach((planet) => this.drawPlanet(ctx, planet, focus));
-    this.game.shotEffects.forEach((effect) => this.drawShotEffect(ctx, effect.from, effect.to, effect.remaining, effect.kind));
+    this.game.shotEffects.forEach((effect) => this.drawShotEffect(ctx, effect.source?.center ?? effect.from, effect.to, effect.remaining, effect.kind));
     this.game.playerShips.filter((ship) => ship.isAlive()).forEach((ship) => this.drawShip(ctx, ship, Owner.Player));
     this.game.computerShips.filter((ship) => ship.isAlive()).forEach((ship) => this.drawShip(ctx, ship, Owner.Computer));
   }
   private color(owner: Owner) { return owner === Owner.Player ? '#ff8080' : owner === Owner.Computer ? '#80ff80' : '#808080'; }
   focusOn(planet: Planet) {
     this.cameraFocus = new Position(
-      planet.position.x + planet.radius / 2,
-      planet.position.y + planet.radius / 2,
+      planet.centerPosition.x,
+      planet.centerPosition.y,
     );
     this.camera.setFocus(this.cameraFocus);
   }
@@ -110,14 +110,22 @@ export class Renderer {
   private drawTargetArrow(ctx: CanvasRenderingContext2D, planet: Planet) {
     if (planet.getOwner() !== Owner.Player) return;
     const target = planet.getTarget(); if (target === planet) return;
-    const sourcePosition = this.camera.modelToView(planet.position);
-    const targetPosition = this.camera.modelToView(target.position);
-    const sourceRadius = this.camera.radius(planet.radius);
-    const targetRadius = this.camera.radius(target.radius);
-    const start = { x: sourcePosition.x + sourceRadius / 2, y: sourcePosition.y + sourceRadius / 2 };
-    const end = { x: targetPosition.x + targetRadius / 2, y: targetPosition.y + targetRadius / 2 }; 
-    const direction = Math.atan2(end.y - start.y, end.x - start.x);
-    const arrowEnd = { x: end.x - targetRadius / 2 * Math.cos(direction), y: end.y - targetRadius / 2 * Math.sin(direction) };
+    const sourcePosition = this.camera.modelToView(planet.centerPosition);
+    const targetPosition = this.camera.modelToView(target.centerPosition);
+    const sourceRadius = this.camera.radius(planet.radius) / 2;
+    const targetRadius = this.camera.radius(target.radius) / 2;
+    const direction = Math.atan2(
+      targetPosition.y - sourcePosition.y,
+      targetPosition.x - sourcePosition.x,
+    );
+    const start = {
+      x: sourcePosition.x + sourceRadius * Math.cos(direction),
+      y: sourcePosition.y + sourceRadius * Math.sin(direction),
+    };
+    const arrowEnd = {
+      x: targetPosition.x - targetRadius * Math.cos(direction),
+      y: targetPosition.y - targetRadius * Math.sin(direction),
+    };
 
     const arrowSize = 7;
     ctx.strokeStyle = '#707070';
@@ -132,15 +140,15 @@ export class Renderer {
     ctx.stroke();
   }
   private drawPlanet(ctx: CanvasRenderingContext2D, planet: Planet, focus?: Planet) {
-    const center = this.camera.modelToView(planet.position); const radius = this.camera.radius(planet.radius);
-    ctx.fillStyle = this.color(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x + radius / 2, center.y + radius / 2, radius / 2, 0, Math.PI * 2); ctx.fill();
+    const center = this.camera.modelToView(planet.centerPosition); const radius = this.camera.radius(planet.radius);
+    ctx.fillStyle = this.color(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x, center.y, radius / 2, 0, Math.PI * 2); ctx.fill();
     if (focus === planet) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
     planet.parts.forEach((part, index) => {
       if (part instanceof FreeIndustry) return;
       const angle = index * 2 * Math.PI / planet.parts.length;
       const factoryCenter = {
-        x: center.x + radius / 2 + Math.cos(angle) * radius / 4,
-        y: center.y + radius / 2 + Math.sin(angle) * radius / 4,
+        x: center.x + Math.cos(angle) * radius / 4,
+        y: center.y + Math.sin(angle) * radius / 4,
       };
       const factorySize = radius / 4 * 0.7;
       const symbol = part instanceof IndustryConstruction ? part.getFactory() : part;
@@ -186,13 +194,70 @@ export class Renderer {
     filled = true,
   ) {
     ctx.fillStyle = color;
-    if (ship instanceof Colonizer || ship instanceof ColonizerIndustry) {
+    if (ship instanceof Colonizer) {
+      const frontRadius = size;
+      const rearRadius = size * .75;
+      const overlap = size * .1;
+      const distanceBetweenCenters = frontRadius + rearRadius - overlap;
+      const frontCenter = {
+        x: center.x + direction.x * distanceBetweenCenters / 2,
+        y: center.y + direction.y * distanceBetweenCenters / 2,
+      };
+      const rearCenter = {
+        x: center.x - direction.x * distanceBetweenCenters / 2,
+        y: center.y - direction.y * distanceBetweenCenters / 2,
+      };
+
+      ctx.beginPath();
+      ctx.arc(rearCenter.x, rearCenter.y, rearRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(frontCenter.x, frontCenter.y, frontRadius, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (ship instanceof ColonizerIndustry) {
       ctx.beginPath();
       ctx.arc(center.x, center.y, size, 0, Math.PI * 2);
       if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
       return;
     }
-    if (ship instanceof Bomber || ship instanceof BomberIndustry) {
+    if (ship instanceof Bomber) {
+      const bodyHalfSize = size;
+      const bodyCenter = {
+        x: center.x - direction.x * bodyHalfSize / 2,
+        y: center.y - direction.y * bodyHalfSize / 2,
+      };
+      const bodyFront = {
+        x: bodyCenter.x + direction.x * bodyHalfSize,
+        y: bodyCenter.y + direction.y * bodyHalfSize,
+      };
+      const bodyBack = {
+        x: bodyCenter.x - direction.x * bodyHalfSize,
+        y: bodyCenter.y - direction.y * bodyHalfSize,
+      };
+      const nose = {
+        x: bodyFront.x + direction.x * bodyHalfSize,
+        y: bodyFront.y + direction.y * bodyHalfSize,
+      };
+
+      ctx.beginPath();
+      ctx.moveTo(bodyFront.x + right.x * bodyHalfSize, bodyFront.y + right.y * bodyHalfSize);
+      ctx.lineTo(bodyBack.x + right.x * bodyHalfSize, bodyBack.y + right.y * bodyHalfSize);
+      ctx.lineTo(bodyBack.x - right.x * bodyHalfSize, bodyBack.y - right.y * bodyHalfSize);
+      ctx.lineTo(bodyFront.x - right.x * bodyHalfSize, bodyFront.y - right.y * bodyHalfSize);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(nose.x, nose.y);
+      ctx.lineTo(bodyFront.x + right.x * bodyHalfSize, bodyFront.y + right.y * bodyHalfSize);
+      ctx.lineTo(bodyFront.x - right.x * bodyHalfSize, bodyFront.y - right.y * bodyHalfSize);
+      ctx.closePath();
+      ctx.fill();
+      return;
+    }
+    if (ship instanceof BomberIndustry) {
       if (filled) ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
       else { ctx.strokeStyle = color; ctx.strokeRect(center.x - size, center.y - size, size * 2, size * 2); }
       return;
@@ -210,9 +275,9 @@ export class Renderer {
     for (let index = this.game.space.planets.length - 1; index >= 0; index -= 1) {
       const planet = this.game.space.planets[index];
       const visualRadius = this.camera.radius(planet.radius) / 2;
-      const visualPosition = this.camera.modelToView(planet.position);
-      const centerX = visualPosition.x + visualRadius;
-      const centerY = visualPosition.y + visualRadius;
+      const visualPosition = this.camera.modelToView(planet.centerPosition);
+      const centerX = visualPosition.x;
+      const centerY = visualPosition.y;
       if (Math.hypot(point.x - centerX, point.y - centerY) <= visualRadius) return planet;
     }
     return undefined;

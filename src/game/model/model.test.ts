@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ColonizerIndustry, Direction, FreeIndustry, Game, Hunter, IndustryConstruction, Owner, Planet, Position, Ship, Space } from './index.ts';
+import { Bomber, Colonizer, ColonizerIndustry, Direction, FreeIndustry, Game, Hunter, IndustryConstruction, Owner, Planet, Position, Ship, Space } from './index.ts';
 
 describe('modellens geometri', () => {
   it('normaliserar riktningar och vrider kortaste vägen', () => {
@@ -16,10 +16,15 @@ describe('modellens geometri', () => {
 
 describe('spelvärld', () => {
   it('skapar rätt antal planeter och startägare', () => {
-    const space = new Space(() => .5);
+    let seed = 17;
+    const random = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483647;
+      return seed / 2147483647;
+    };
+    const space = new Space(random);
     expect(space.planets).toHaveLength(Space.NUM_PLANETS);
-    expect(space.getPlanet(0).getOwner()).toBe(Owner.Player);
-    expect(space.getPlanet(1).getOwner()).toBe(Owner.Computer);
+    expect(space.getPlanetsThatBelongTo(Owner.Player)).toHaveLength(1);
+    expect(space.getPlanetsThatBelongTo(Owner.Computer)).toHaveLength(1);
   });
   it('förhindrar byggande på full planet', () => {
     const planet = new Planet(new Position(0, 0), .1);
@@ -30,7 +35,7 @@ describe('spelvärld', () => {
     expect(() => planet.buildIndustry({ update() {} } as never, Owner.Player)).toThrow();
   });
   it('kan uppdatera ett spel med begränsat tidssteg', () => {
-    const game = new Game(() => .5);
+    const game = new Game(Math.random);
     expect(() => game.update(.1)).not.toThrow();
   });
   it('rapporterar produktionsprogress för en fabrik', () => {
@@ -45,6 +50,7 @@ describe('spelvärld', () => {
   it('fortsätter att röra sig i omloppsbana', () => {
     const ship = new Hunter(new Position(1, 0));
     ship.orbitAround(new Position(0, 0), 1);
+    expect(ship.shipSpeed).toBeCloseTo(.8);
     ship.update(.5);
     const firstPosition = { x: ship.center.x, y: ship.center.y };
     ship.update(.5);
@@ -52,9 +58,102 @@ describe('spelvärld', () => {
     expect(ship.center.x).not.toBeCloseTo(firstPosition.x);
     expect(ship.center.y).not.toBeCloseTo(firstPosition.y);
   });
+  it('låter bombers och colonizers fortsätta kretsa runt målplaneten', () => {
+    const home = new Planet(new Position(.5, .5), .1);
+    const target = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    target.setOwner(Owner.Player);
+    home.setTarget(target, Owner.Player);
+
+    const ships: Ship[] = [
+      new Colonizer(new Position(.1, 0)),
+      new Bomber(new Position(.04, 0)),
+    ];
+
+    ships.forEach((ship) => {
+      ship.setHome(home);
+      ship.updateBehavior(.1, [], []);
+      ship.update(.5);
+      ship.updateBehavior(.1, [], []);
+
+      expect(ship.isOrbitingAround(target.centerPosition)).toBe(true);
+    });
+  });
+  it('koloniserar nära ytan även om colonizern fortfarande rör sig', () => {
+    const home = new Planet(new Position(.5, .5), .1);
+    const target = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    home.setTarget(target, Owner.Player);
+
+    const colonizer = new Colonizer(new Position(-.08, 0));
+    colonizer.setHome(home);
+    colonizer.orbitAround(target.centerPosition, 1);
+
+    colonizer.updateBehavior(.1);
+
+    expect(target.getOwner()).toBe(Owner.None);
+    expect(colonizer.shipSpeed).toBeCloseTo(.24);
+
+    colonizer.update(.1);
+
+    const colonizationDistance = target.radius / 2 + colonizer.radius * 2;
+    expect(colonizer.center.distanceTo(target.centerPosition)).toBeCloseTo(colonizationDistance);
+    expect(colonizer.shipSpeed).toBeGreaterThan(0);
+    expect(target.getOwner()).toBe(Owner.None);
+
+    colonizer.updateBehavior(.1);
+
+    expect(target.getOwner()).toBe(Owner.Player);
+    expect(colonizer.isAlive()).toBe(false);
+  });
+  it('väntar på ytan tills målplanetens fabriker är förstörda', () => {
+    const home = new Planet(new Position(.5, .5), .1);
+    const target = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    target.setOwner(Owner.Computer);
+    target.buildIndustry(new ColonizerIndustry([]), Owner.Computer);
+    target.update(2.1);
+    home.setTarget(target, Owner.Player);
+
+    const colonizer = new Colonizer(new Position(-.056, 0));
+    colonizer.setHome(home);
+    colonizer.orbitAround(target.centerPosition, 1);
+    colonizer.updateBehavior(.1);
+
+    const surfaceDistance = target.radius / 2 + colonizer.radius;
+    expect(colonizer.center.distanceTo(target.centerPosition)).toBeCloseTo(surfaceDistance);
+    expect(colonizer.shipSpeed).toBe(0);
+    expect(colonizer.isAlive()).toBe(true);
+    expect(target.getOwner()).toBe(Owner.Computer);
+
+    target.killFactory();
+    colonizer.updateBehavior(.1);
+
+    expect(target.getOwner()).toBe(Owner.Player);
+    expect(colonizer.isAlive()).toBe(false);
+  });
+  it('bromsar när det rör sig bort från målet', () => {
+    const ship = new Hunter(new Position(1, 0));
+    ship.orbitAround(new Position(0, 0), 1);
+    ship.update(.5);
+
+    const direction = ship.direction;
+    const targetBehindShip = new Position(
+      ship.center.x - direction.x,
+      ship.center.y - direction.y,
+    );
+    const initialSpeed = ship.shipSpeed;
+
+    ship.setAimDirection(targetBehindShip);
+    ship.update(.1);
+
+    expect(ship.shipSpeed).toBeCloseTo(initialSpeed - .1);
+  });
   it('skapar skepp vid den fabrik som producerar dem', () => {
     const planet = new Planet(new Position(.2, .3), .1);
+    const target = new Planet(new Position(.8, .8), .1);
     planet.setOwner(Owner.Player);
+    planet.setTarget(target, Owner.Player);
     const ships: Ship[] = [];
     planet.buildIndustry(new ColonizerIndustry(ships), Owner.Player);
     planet.update(2.1);
@@ -62,13 +161,16 @@ describe('spelvärld', () => {
     expect(ships).toHaveLength(1);
     expect(ships[0].center.x).toBeCloseTo(planet.getIndustrySpawnPosition(0).x);
     expect(ships[0].center.y).toBeCloseTo(planet.getIndustrySpawnPosition(0).y);
+    const expectedDirection = ships[0].center.getDirectionTo(target.centerPosition);
+    expect(ships[0].direction.x).toBeCloseTo(expectedDirection.x);
+    expect(ships[0].direction.y).toBeCloseTo(expectedDirection.y);
   });
   it('lämnar omloppsbanan när hemplanet får ett nytt mål', () => {
     const home = new Planet(new Position(0, 0), .1);
     const firstTarget = new Planet(new Position(0, 0), .1);
     const secondTarget = new Planet(new Position(.8, .8), .1);
     home.setOwner(Owner.Player);
-    const ship = new Hunter(firstTarget.position);
+    const ship = new Hunter(firstTarget.centerPosition);
     home.setTarget(firstTarget, Owner.Player);
     ship.setHome(home);
     ship.updateBehavior(.1, [], []);

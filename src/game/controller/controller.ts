@@ -4,7 +4,13 @@ import { Renderer } from '../view/renderer.ts';
 
 export class Controller {
   private focus?: Planet;
-  constructor(private game: Game, private renderer: Renderer, private input: Input) {}
+  constructor(private game: Game, private renderer: Renderer, private input: Input) {
+    this.focus = game.space.getPlanetsThatBelongTo(Owner.Player)[0];
+    this.renderer.setSelectedPlanet(this.focus);
+    if (this.focus) {
+      this.renderer.focusOn(this.focus);
+    }
+  }
   update(dt: number) {
     this.game.update(dt);
     const gesture = this.input.consumeGesture();
@@ -12,7 +18,12 @@ export class Controller {
       const startPlanet = this.renderer.getPlanetAt(gesture.start);
       const endPlanet = this.renderer.getPlanetAt(gesture.end);
       if (gesture.moved && this.focus && startPlanet === this.focus && endPlanet && endPlanet !== this.focus) {
-        try { this.focus.setTarget(endPlanet, Owner.Player); } catch { /* only player planets are selectable */ }
+        try {
+          this.focus.setTarget(endPlanet, Owner.Player);
+          this.focus = endPlanet;
+          this.renderer.setSelectedPlanet(this.focus);
+          this.renderer.focusOn(this.focus);
+        } catch { /* only player planets are selectable */ }
       } else if (!gesture.moved) {
         this.focus = endPlanet;
         this.renderer.setSelectedPlanet(this.focus);

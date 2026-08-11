@@ -7,7 +7,7 @@ export class Planet {
   private target: Planet = this;
   private owner: Owner = Owner.None;
 
-  constructor(public position: Position, public radius: number) {}
+  constructor(public centerPosition: Position, public radius: number) {}
   getTarget() { return this.target; }
   getOwner() { return this.owner; }
   setOwner(owner: Owner) { this.owner = owner; }
@@ -16,6 +16,7 @@ export class Planet {
     if (target !== this && target.getTarget() === this && target.getOwner() === owner) target.setTarget(target, owner);
     this.target = target;
   }
+
   getTargetPlanet() {
     const follow = this.owner;
     let current: Planet = this;
@@ -29,15 +30,15 @@ export class Planet {
   getIndustryPosition(index: number) {
     const angle = index * 2 * Math.PI / this.parts.length;
     return new Position(
-      this.position.x + this.radius  + Math.cos(angle) * this.radius / 4,
-      this.position.y + this.radius  + Math.sin(angle) * this.radius / 4,
+      this.centerPosition.x + Math.cos(angle) * this.radius / 2,
+      this.centerPosition.y + Math.sin(angle) * this.radius / 2,
     );
   }
   getIndustrySpawnPosition(index: number) {
     const angle = index * 2 * Math.PI / this.parts.length;
     return new Position(
-      this.position.x + this.radius  + Math.cos(angle) * this.radius * 1.25,
-      this.position.y + this.radius  + Math.sin(angle) * this.radius * 1.25,
+      this.centerPosition.x + Math.cos(angle) * this.radius * 1.25,
+      this.centerPosition.y + Math.sin(angle) * this.radius * 1.25,
     );
   }
   update(dt: number) {

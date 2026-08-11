@@ -15,6 +15,7 @@ export abstract class ShippingIndustry extends Industry {
       if (this.timeToCompletion < 0) {
         this.currentShip = this.createShip(position);
         this.currentShip.setHome(home);
+        this.currentShip.faceTowards(home.getTargetPlanet().centerPosition);
         this.allies.push(this.currentShip);
       }
     }
