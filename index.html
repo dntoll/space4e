@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#080b12" />
+    <title>Space</title>
+  </head>
+  <body>
+    <main id="app" aria-label="Space-spel">
+      <canvas id="game" tabindex="0"></canvas>
+      <div class="controls" aria-label="Byggkontroller">
+        <button data-command="c">Bygg kolonisationsskepp (C)</button>
+        <button data-command="h">Bygg jaktfartyg (H)</button>
+        <button data-command="b">Bygg bombfartyg (B)</button>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,16 +1,30 @@
-# Assignment 1 Part 1
+# Space – TypeScript/Vite
 
-This is the Java project for Assignment 1 Part 1. The project is based on gradle and uses JUnit Jupiter as the testing framework. In the assignment you will write unit tests for a documented library `test_lib`. Your task is to *find problems* in the library documented in JUnit test cases and write a report over you reccomentations to the developers of `test_lib`.
+Projektet är en beteendetrogen webbport av det tidigare Java/Swing-spelet. Spelkärnan ligger i `src/game/model.ts`, rendering sker med Canvas 2D och byggsystemet är npm/Vite.
 
-## Building
+## Köra lokalt
 
-You build using command `./gradlew build` - note that as you add test cases the build will fail as you are finding bugs.  
+```bash
+npm install
+npm run dev
+```
 
-## Running
-You build using command `./gradlew run -q --console=plain` - note that the project does not do anything meaningful. 
+För verifiering:
 
-## Pipeline
-A CI/CD pipeline is included in the project and will try to build the system on each push. Note that as you add (failing) test cases the pipeline will (and should) fail.
+```bash
+npm run typecheck
+npm test
+npm run build
+```
 
-## VSCode
-In some cases VSCode is does not load the libary properly and running in VSCode does not work and IntelliSense is reporting problems. This can often be fixed by using running  `Java: Clean Java Language Workspace Server` from the VSCode command palette.
+Klicka på en planet för att välja den och klicka sedan på en målplanet. Tangenterna `C`, `H` och `B`, eller knapparna längst ned på skärmen, bygger kolonisations-, jakt- respektive bombfartyg. Pointer Events används för mus och touch.
+
+## Arkitektur
+
+- `src/game/model.ts`: webbläsaroberoende geometri, värld, skepp, AI och industrier.
+- `src/game/renderer.ts`: responsiv Canvas-rendering och kamera.
+- `src/game/input.ts`: tangentbord, pointer och mobilknappar.
+- `src/game/controller.ts`: översätter input till domänkommandon.
+- `src/main.ts`: `requestAnimationFrame`, resize och livscykel.
+
+Vite använder `base: "./"` och producerar `dist`, vilket gör appen kompatibel med en framtida Capacitor-konfiguration med `webDir: "dist"`. Native-livscykel, lagring och plugins bör senare kapslas bakom adapters i stället för att läggas i spelmodellen.
