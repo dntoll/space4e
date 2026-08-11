@@ -2,6 +2,8 @@ import { Position } from './position.ts';
 import { Ship, ShotEffect } from './ship.ts';
 
 export class Bomber extends Ship {
+  protected override get turnSpeedDegrees() { return 60; }
+
   updateBehavior(dt: number): ShotEffect | undefined {
     
     if (!this.isAlive() || !this.home) 

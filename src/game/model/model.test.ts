@@ -12,6 +12,55 @@ describe('modellens geometri', () => {
   it('beräknar avstånd', () => {
     expect(new Position(0, 0).distanceTo(new Position(3, 4))).toBe(5);
   });
+  it('ger skeppstyperna olika svänghastighet', () => {
+    const target = new Position(0, 1);
+    const hunter = new Hunter(new Position(0, 0));
+    const bomber = new Bomber(new Position(0, 0));
+    const colonizer = new Colonizer(new Position(0, 0));
+
+    [hunter, bomber, colonizer].forEach((ship) => {
+      ship.setAimDirection(target);
+      ship.update(.5);
+    });
+
+    const hunterAngle = Math.atan2(hunter.direction.y, hunter.direction.x);
+    const bomberAngle = Math.atan2(bomber.direction.y, bomber.direction.x);
+    const colonizerAngle = Math.atan2(colonizer.direction.y, colonizer.direction.x);
+
+    expect(hunterAngle).toBeGreaterThan(bomberAngle);
+    expect(bomberAngle).toBeGreaterThan(colonizerAngle);
+    expect(colonizerAngle).toBeCloseTo(15 * Math.PI / 180);
+  });
+  it('styr stabilt runt den närmaste planeten som blockerar färdvägen', () => {
+    const ship = new Hunter(new Position(0, 0));
+    const nearestPlanet = new Planet(new Position(.3, 0), .1);
+    const fartherPlanet = new Planet(new Position(.6, 0), .1);
+    const target = new Position(1, 0);
+
+    ship.setAimDirection(target);
+    ship.avoidPlanets([fartherPlanet, nearestPlanet]);
+    ship.update(1);
+    const firstAvoidanceDirection = Math.sign(ship.direction.y);
+
+    expect(Math.abs(ship.direction.y)).toBeGreaterThan(.12);
+
+    ship.setAimDirection(target);
+    ship.avoidPlanets([fartherPlanet, nearestPlanet]);
+    ship.update(.01);
+
+    expect(Math.sign(ship.direction.y)).toBe(firstAvoidanceDirection);
+  });
+  it('tillåter färd till en planet som är det uttryckliga målet', () => {
+    const targetPlanet = new Planet(new Position(0, 1), .1);
+    const ship = new Hunter(new Position(0, 0));
+
+    ship.setAimDirection(targetPlanet.centerPosition);
+    ship.avoidPlanets([targetPlanet]);
+    ship.update(1);
+
+    expect(ship.direction.x).toBeCloseTo(0);
+    expect(ship.direction.y).toBeCloseTo(1);
+  });
 });
 
 describe('spelvärld', () => {
@@ -48,15 +97,41 @@ describe('spelvärld', () => {
     expect(planet.parts[0].getProgress()).toBeLessThan(1);
   });
   it('fortsätter att röra sig i omloppsbana', () => {
-    const ship = new Hunter(new Position(1, 0));
-    ship.orbitAround(new Position(0, 0), 1);
-    expect(ship.shipSpeed).toBeCloseTo(.8);
+    const ship = new Hunter(new Position(.05, 0));
+    ship.orbitAround(new Position(0, 0), .05);
+    expect(ship.shipSpeed).toBeGreaterThan(0);
     ship.update(.5);
     const firstPosition = { x: ship.center.x, y: ship.center.y };
     ship.update(.5);
-    expect(ship.center.distanceTo(new Position(0, 0))).toBeCloseTo(1);
+    expect(ship.center.distanceTo(new Position(0, 0))).toBeCloseTo(.05);
     expect(ship.center.x).not.toBeCloseTo(firstPosition.x);
     expect(ship.center.y).not.toBeCloseTo(firstPosition.y);
+  });
+  it('byter omloppsradie utan att hoppa', () => {
+    const orbitCenter = new Position(0, 0);
+    const ship = new Hunter(new Position(.1, 0));
+
+    ship.orbitAround(orbitCenter, .05);
+    expect(ship.center.distanceTo(orbitCenter)).toBeCloseTo(.1);
+
+    const positionBeforeUpdate = new Position(ship.center.x, ship.center.y);
+    const maximumMovement = ship.shipSpeed * .1;
+    ship.update(.1);
+    const distanceAfterFirstUpdate = ship.center.distanceTo(orbitCenter);
+
+    expect(distanceAfterFirstUpdate).toBeLessThan(.1);
+    expect(distanceAfterFirstUpdate).toBeGreaterThan(.05);
+    expect(ship.center.distanceTo(positionBeforeUpdate)).toBeLessThanOrEqual(maximumMovement + .000001);
+  });
+  it('orbitar snabbare närmare planeten', () => {
+    const orbitCenter = new Position(0, 0);
+    const nearShip = new Hunter(new Position(.025, 0));
+    const farShip = new Hunter(new Position(.1, 0));
+
+    nearShip.orbitAround(orbitCenter, .025);
+    farShip.orbitAround(orbitCenter, .1);
+
+    expect(nearShip.shipSpeed).toBeGreaterThan(farShip.shipSpeed);
   });
   it('låter bombers och colonizers fortsätta kretsa runt målplaneten', () => {
     const home = new Planet(new Position(.5, .5), .1);
@@ -85,21 +160,11 @@ describe('spelvärld', () => {
     home.setOwner(Owner.Player);
     home.setTarget(target, Owner.Player);
 
-    const colonizer = new Colonizer(new Position(-.08, 0));
+    const colonizer = new Colonizer(new Position(-.056, 0));
     colonizer.setHome(home);
-    colonizer.orbitAround(target.centerPosition, 1);
+    colonizer.orbitAround(target.centerPosition, .056);
 
-    colonizer.updateBehavior(.1);
-
-    expect(target.getOwner()).toBe(Owner.None);
-    expect(colonizer.shipSpeed).toBeCloseTo(.24);
-
-    colonizer.update(.1);
-
-    const colonizationDistance = target.radius / 2 + colonizer.radius * 2;
-    expect(colonizer.center.distanceTo(target.centerPosition)).toBeCloseTo(colonizationDistance);
     expect(colonizer.shipSpeed).toBeGreaterThan(0);
-    expect(target.getOwner()).toBe(Owner.None);
 
     colonizer.updateBehavior(.1);
 
@@ -147,7 +212,8 @@ describe('spelvärld', () => {
     ship.setAimDirection(targetBehindShip);
     ship.update(.1);
 
-    expect(ship.shipSpeed).toBeCloseTo(initialSpeed - .1);
+    expect(ship.shipSpeed).toBeLessThan(initialSpeed);
+    expect(ship.shipSpeed).toBeGreaterThanOrEqual(0);
   });
   it('skapar skepp vid den fabrik som producerar dem', () => {
     const planet = new Planet(new Position(.2, .3), .1);

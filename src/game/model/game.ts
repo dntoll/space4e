@@ -17,6 +17,7 @@ export class Game {
       const friends = this.playerShips.includes(ship) ? this.playerShips : this.computerShips;
       const opponents = this.playerShips.includes(ship) ? this.computerShips : this.playerShips;
       const effect = ship.updateBehavior(dt, friends, opponents);
+      ship.avoidPlanets(this.space.planets);
       if (effect) this.shotEffects.push(effect);
     });
     this.playerShips.forEach((ship) => ship.update(dt));

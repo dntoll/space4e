@@ -4,6 +4,7 @@ import { Ship, ShotEffect } from './ship.ts';
 export class Hunter extends Ship {
 
   private readonly targettableDistance = 0.1;
+  protected override get turnSpeedDegrees() { return 90; }
 
   updateBehavior(dt: number, _friends: Ship[], opponents: Ship[]): ShotEffect | undefined {
     if (!this.isAlive() || !this.home) 
