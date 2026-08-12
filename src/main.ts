@@ -2,11 +2,15 @@ import './style.css';
 import { Controller } from './game/controller/controller.ts';
 import { Game } from './game/model/index.ts';
 import { Input } from './game/view/input.ts';
+import { Minimap } from './game/view/minimap.ts';
 import { Renderer } from './game/view/renderer.ts';
 import { ViewStrings } from './game/view/view-strings.ts';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (!canvas) throw new Error(ViewStrings.App.canvasMissing);
+
+const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap');
+if (!minimapCanvas) throw new Error('Minimap canvas missing');
 
 applyStaticLabels();
 
@@ -14,6 +18,13 @@ const game = new Game();
 const input = new Input(canvas);
 const renderer = new Renderer(canvas, game);
 const controller = new Controller(game, renderer, input);
+const minimap = new Minimap(
+  minimapCanvas,
+  game,
+  (position) => renderer.setCameraFocus(position),
+  () => renderer.getCamera().getFocus(),
+  () => renderer.getCamera().getViewExtent(),
+);
 let previous = performance.now();
 let running = true;
 let paused = true;
@@ -28,6 +39,7 @@ const frame = (now: number) => {
   previous = now;
   controller.update(dt);
   renderer.render(controller.getFocus());
+  minimap.render();
   requestAnimationFrame(frame);
 };
 requestAnimationFrame(frame);

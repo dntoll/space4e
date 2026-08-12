@@ -11,12 +11,12 @@ export const GameConstants = {
 
   Space: {
     NumPlanets: 20,
-    SpaceRadius: 0.5,
-    MinPlanetSpacing: 0.1,
-    MinPlanetRadius: 0.02,
-    PlanetRadiusVariance: 0.02,
+    SpaceRadius: 1.5,
+    MinPlanetSpacing: 0.3,
+    MinPlanetRadius: 0.04,
+    PlanetRadiusVariance: 0.05,
     UnminedOreMin: 20,
-    UnminedOreRange: 80,
+    UnminedOreRange: 100,
     CollectionPotentialMin: 0.05,
     CollectionPotentialRange: 0.35,
   },
@@ -83,7 +83,7 @@ export const GameConstants = {
     TurnSpeedDegrees: 30,
     MaxEnergy: 1,
     TravelCostPerDistance: 0.25,
-    OrbitRadiusMultiplier: 1.1,
+    OrbitRadiusMultiplier: 1.6,
     CloseOrbitThresholdMultiplier: 1.2,
     SpawnDistanceMultiplier: 1.25,
   },
@@ -95,5 +95,12 @@ export const GameConstants = {
 
   Bomber: {
     TurnSpeedDegrees: 60,
+  },
+
+  PlanetaryDefenseGun: {
+    MaterialCost: 5,
+    Range: 0.06,
+    ShotCooldown: 1,
+    ShotEffectDuration: 0.3,
   },
 };

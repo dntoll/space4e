@@ -13,38 +13,49 @@ import {
   HunterIndustry,
   Industry,
   IndustryConstruction,
+  IndustryOrder,
   Owner,
   Planet,
+  PlanetaryDefenseGun,
   Position,
   Refinery,
   Ship,
+  Spaceport,
 } from '../model/index.ts';
+import spritesUrl from '../../../res/sprites.png';
 
 export class Camera {
   private focus = new Position(0, 0);
   private zoom = 1;
   constructor(public width: number, public height: number) { }
+  private scale() { return this.width * this.zoom; }
   setFocus(position: Position) { this.focus = new Position(position.x, position.y); }
   panByView(deltaX: number, deltaY: number) {
-    const modelDelta = { x: deltaX / (this.width * this.zoom), y: deltaY / (this.height * this.zoom) };
+    const scale = this.scale();
+    const modelDelta = { x: deltaX / scale, y: deltaY / scale };
     this.focus.x -= modelDelta.x;
     this.focus.y -= modelDelta.y;
     return modelDelta;
   }
   changeZoom(amount: number) { this.zoom = Math.min(4, Math.max(.5, this.zoom * Math.exp(amount))); }
   viewToModel(point: { x: number; y: number }) {
+    const scale = this.scale();
     return new Position(
-      (point.x - this.width / 2) / (this.width * this.zoom) + this.focus.x,
-      (point.y - this.height / 2) / (this.height * this.zoom) + this.focus.y,
+      (point.x - this.width / 2) / scale + this.focus.x,
+      (point.y - this.height / 2) / scale + this.focus.y,
     );
   }
   modelToView(point: Position) {
+    const scale = this.scale();
     return {
-      x: (point.x - this.focus.x) * this.width * this.zoom + this.width / 2,
-      y: (point.y - this.focus.y) * this.height * this.zoom + this.height / 2,
+      x: (point.x - this.focus.x) * scale + this.width / 2,
+      y: (point.y - this.focus.y) * scale + this.height / 2,
     };
   }
-  radius(value: number) { return value * this.width * this.zoom; }
+  radius(value: number) { return value * this.scale(); }
+  getViewExtent() { const scale = this.scale(); return { width: this.width / scale, height: this.height / scale }; }
+  getFocus() { return this.focus; }
+  getZoom() { return this.zoom; }
 }
 
 export class Renderer {
@@ -53,8 +64,12 @@ export class Renderer {
   private panPointer?: { id: number; x: number; y: number };
   private selectedPlanet?: Planet;
   private selectedIndustryIndex?: number;
+  private readonly sprites = new Image();
+  private spritesReady = false;
   constructor(private canvas: HTMLCanvasElement, private game: Game) {
     this.resize();
+    this.sprites.onload = () => { this.spritesReady = true; };
+    this.sprites.src = spritesUrl;
     window.addEventListener('resize', () => this.resize());
     canvas.addEventListener('pointerdown', (event) => {
       if (this.getPlanetAt(this.pointerPosition(event))) return;
@@ -107,6 +122,11 @@ export class Renderer {
     );
     this.camera.setFocus(this.cameraFocus);
   }
+  setCameraFocus(position: Position) {
+    this.cameraFocus = new Position(position.x, position.y);
+    this.camera.setFocus(this.cameraFocus);
+  }
+  getCamera() { return this.camera; }
   setSelectedPlanet(planet?: Planet) { this.selectedPlanet = planet; }
   setSelectedIndustry(index?: number) { this.selectedIndustryIndex = index; }
   private pointerPosition(event: PointerEvent) {
@@ -118,8 +138,8 @@ export class Renderer {
     const target = planet.getTarget(); if (target === planet) return;
     const sourcePosition = this.camera.modelToView(planet.centerPosition);
     const targetPosition = this.camera.modelToView(target.centerPosition);
-    const sourceRadius = this.camera.radius(planet.radius) / 2;
-    const targetRadius = this.camera.radius(target.radius) / 2;
+    const sourceRadius = this.camera.radius(planet.radius);
+    const targetRadius = this.camera.radius(target.radius);
     const direction = Math.atan2(
       targetPosition.y - sourcePosition.y,
       targetPosition.x - sourcePosition.x,
@@ -147,24 +167,35 @@ export class Renderer {
   }
   private drawPlanet(ctx: CanvasRenderingContext2D, planet: Planet, focus?: Planet) {
     const center = this.camera.modelToView(planet.centerPosition); const radius = this.camera.radius(planet.radius);
-    ctx.fillStyle = this.color(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x, center.y, radius / 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = this.color(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
     if (planet.hasSpaceport()) {
       ctx.strokeStyle = '#a0a0a0';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(center.x, center.y, radius / 2 + 3, 0, Math.PI * 2);
+      ctx.arc(center.x, center.y, radius + 3, 0, Math.PI * 2);
       ctx.stroke();
+      if (this.spritesReady) {
+        const slotCount = planet.parts.length;
+        const angle = -Math.PI / slotCount;
+        const spaceportSize = radius / 4 * 0.7;
+        const spaceportPivot = {
+          x: center.x + Math.cos(angle) * radius,
+          y: center.y + Math.sin(angle) * radius,
+        };
+        this.drawIndustrySprite(ctx, spaceportPivot, spaceportSize, 0, angle, false);
+      }
     }
     if (focus === planet) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
     planet.parts.forEach((part, index) => {
       const factoryModelPosition = planet.getIndustryPosition(index);
-      const factoryCenter = this.camera.modelToView(factoryModelPosition);
+      const pivot = this.camera.modelToView(factoryModelPosition);
       const radial = new Direction(
         factoryModelPosition.x - planet.centerPosition.x,
         factoryModelPosition.y - planet.centerPosition.y,
       );
       const right = radial.getRight();
       const factorySize = radius / 4 * 0.7;
+      const factoryCenter = this.industryDrawCenter(planet, index);
 
       if (part instanceof FreeIndustry) {
         ctx.strokeStyle = planet.getOwner() === Owner.None ? '#3a3a3a' : '#555';
@@ -177,8 +208,19 @@ export class Renderer {
         return;
       }
 
-      const symbol = part instanceof IndustryConstruction ? part.getFactory() : part;
-      this.drawShipSymbol(ctx, factoryCenter, factorySize, symbol, '#555', radial, right, !(part instanceof IndustryConstruction));
+      const symbol = part instanceof IndustryConstruction ? part.getFactory() : (part instanceof IndustryOrder ? part.getFactory() : part);
+      const angle = Math.atan2(radial.y, radial.x);
+      const dimmed = part instanceof IndustryConstruction || part instanceof IndustryOrder;
+      if (this.spritesReady) {
+        const spriteIndex = this.industrySpriteIndex(symbol);
+        if (spriteIndex !== undefined) {
+          this.drawIndustrySprite(ctx, pivot, factorySize, spriteIndex, angle, dimmed);
+        } else {
+          this.drawShipSymbol(ctx, factoryCenter, factorySize, symbol, '#555', radial, right, !dimmed);
+        }
+      } else {
+        this.drawShipSymbol(ctx, factoryCenter, factorySize, symbol, '#555', radial, right, !dimmed);
+      }
       const progressBarCenter = {
         x: factoryCenter.x + radial.x * factorySize * 2.2,
         y: factoryCenter.y + radial.y * factorySize * 2.2,
@@ -211,7 +253,7 @@ export class Renderer {
       { value: inv.energy, color: '#60d0f0' },
     ];
     const maxValue = 100;
-    const diskRadius = radius / 2;
+    const diskRadius = radius;
     const barArea = diskRadius * 1.2;
     const gap = 1;
     const barWidth = (barArea - gap * (resources.length - 1)) / resources.length;
@@ -238,6 +280,13 @@ export class Renderer {
   }
   private drawShip(ctx: CanvasRenderingContext2D, ship: Ship, owner: Owner) {
     const center = this.camera.modelToView(ship.center); const size = this.camera.radius(ship.radius); const direction = ship.direction; const right = direction.getRight();
+    if (this.spritesReady) {
+      const index = this.shipSpriteIndex(ship);
+      if (index !== undefined) {
+        this.drawShipSprite(ctx, center, size, index, owner, direction);
+        return;
+      }
+    }
     this.drawShipSymbol(ctx, center, size, ship, this.color(owner), direction, right);
   }
   private drawShotEffect(ctx: CanvasRenderingContext2D, from: Position, to: Position, remaining: number, kind: 'shot' | 'bomb') {
@@ -286,6 +335,18 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(center.x, center.y, size * 0.4, 0, Math.PI * 2);
       ctx.fill();
+      return;
+    }
+    if (ship instanceof PlanetaryDefenseGun) {
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, size * 0.5, 0, Math.PI * 2);
+      if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, size * 0.3);
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y);
+      ctx.lineTo(center.x + direction.x * size * 1.6, center.y + direction.y * size * 1.6);
+      ctx.stroke();
       return;
     }
     if (ship instanceof FreightShip) {
@@ -385,10 +446,72 @@ export class Renderer {
     ctx.closePath();
     if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
   }
+  private industrySpriteIndex(industry: Industry): number | undefined {
+    if (industry instanceof Spaceport) return 0;
+    if (industry instanceof Extractor) return 1;
+    if (industry instanceof Refinery) return 2;
+    if (industry instanceof Collector) return 3;
+    if (industry instanceof ColonizerIndustry) return 4;
+    if (industry instanceof HunterIndustry) return 5;
+    if (industry instanceof BomberIndustry) return 6;
+    if (industry instanceof PlanetaryDefenseGun) return 7;
+    return undefined;
+  }
+  private shipSpriteIndex(ship: Ship): number | undefined {
+    if (ship instanceof FreightShip) return 0;
+    if (ship instanceof Colonizer) return 1;
+    if (ship instanceof Hunter) return 2;
+    if (ship instanceof Bomber) return 3;
+    return undefined;
+  }
+  private drawIndustrySprite(
+    ctx: CanvasRenderingContext2D,
+    center: { x: number; y: number },
+    size: number,
+    index: number,
+    angle: number,
+    dimmed: boolean,
+  ) {
+    ctx.save();
+    ctx.globalAlpha = dimmed ? 0.4 : 1;
+    ctx.translate(center.x, center.y);
+    ctx.rotate(angle);
+    ctx.drawImage(this.sprites, index * 256, 0, 256, 256, 0, -size * 2, size * 4, size * 4);
+    ctx.restore();
+  }
+  private drawShipSprite(
+    ctx: CanvasRenderingContext2D,
+    center: { x: number; y: number },
+    size: number,
+    index: number,
+    owner: Owner,
+    direction: Direction,
+  ) {
+    const rowY = owner === Owner.Player ? 512 : 768;
+    const angle = Math.atan2(direction.y, direction.x) + Math.PI;
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(angle);
+    ctx.drawImage(this.sprites, index * 512, rowY, 512, 256, -size * 4, -size * 2, size * 8, size * 4);
+    ctx.restore();
+  }
+  private industryDrawCenter(planet: Planet, index: number) {
+    const factoryModelPosition = planet.getIndustryPosition(index);
+    const surfaceView = this.camera.modelToView(factoryModelPosition);
+    const radial = new Direction(
+      factoryModelPosition.x - planet.centerPosition.x,
+      factoryModelPosition.y - planet.centerPosition.y,
+    );
+    const factorySize = this.camera.radius(planet.radius) / 4 * 0.7;
+    return {
+      x: surfaceView.x + radial.x * factorySize * 2,
+      y: surfaceView.y + radial.y * factorySize * 2,
+    };
+  }
   getPlanetAt(point: { x: number; y: number }) {
     for (let index = this.game.space.planets.length - 1; index >= 0; index -= 1) {
       const planet = this.game.space.planets[index];
-      const visualRadius = this.camera.radius(planet.radius) / 2;
+      const visualRadius = this.camera.radius(planet.radius);
       const visualPosition = this.camera.modelToView(planet.centerPosition);
       const centerX = visualPosition.x;
       const centerY = visualPosition.y;
@@ -400,7 +523,7 @@ export class Renderer {
     for (const planet of this.game.space.planets) {
       for (let index = 0; index < planet.parts.length; index += 1) {
         if (planet.parts[index] instanceof FreeIndustry) continue;
-        const position = this.camera.modelToView(planet.getIndustryPosition(index));
+        const position = this.industryDrawCenter(planet, index);
         const size = this.camera.radius(planet.radius) / 4 * 0.7;
         if (Math.hypot(point.x - position.x, point.y - position.y) <= size * 1.8) {
           return { planet, index };

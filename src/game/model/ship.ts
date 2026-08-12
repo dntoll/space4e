@@ -108,7 +108,7 @@ export abstract class Ship {
         return;
       }
 
-      const clearance = planet.radius / 2 + this.radius;
+      const clearance = planet.radius + this.radius;
       const centerDistance = this.center.distanceTo(planet.centerPosition);
       if (centerDistance <= clearance) {
         return;
@@ -141,7 +141,7 @@ export abstract class Ship {
     const centerX = nearestPlanet.centerPosition.x - this.center.x;
     const centerY = nearestPlanet.centerPosition.y - this.center.y;
     const centerDistance = Math.hypot(centerX, centerY);
-    const clearance = nearestPlanet.radius / 2 + this.radius;
+    const clearance = nearestPlanet.radius + this.radius;
     const centerAngle = Math.atan2(centerY, centerX);
     const tangentOffset = Math.asin(Math.min(1, clearance / centerDistance));
 

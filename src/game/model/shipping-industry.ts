@@ -15,7 +15,7 @@ export abstract class ShippingIndustry extends Industry {
     if (!this.currentShip || !this.currentShip.isAlive()) {
       this.timeToCompletion -= dt;
       if (this.timeToCompletion < 0) {
-        this.currentShip = this.createShip(position);
+        this.currentShip = this.createShip(launchPosition);
         this.currentShip.setHome(home);
         this.currentShip.launchFrom(home, launchPosition);
         this.allies.push(this.currentShip);

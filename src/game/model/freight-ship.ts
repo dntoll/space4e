@@ -20,7 +20,7 @@ export class FreightShip extends Ship {
     if (this.launching) return undefined;
 
     const destination = this.home.getTarget();
-    if (destination === this.home) {
+    if (destination === this.home || destination.getOwner() !== this.home.getOwner()) {
       this.orbitAroundPlanet(this.home, this.home.radius * GameConstants.Ship.OrbitRadiusMultiplier);
       return undefined;
     }

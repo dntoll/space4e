@@ -160,6 +160,6 @@ according to the same principles.
 | Colonizer Factory / Bomber Factory / Fighter Factory (one ship, auto-rebuild) | Implemented |
 | Player controls building and destinations | Implemented |
 | Computer civilization (same rules, basic AI) | Implemented |
-| Planetary Defense Gun (fires at orbiting ships, blocks hostile Colonizer landing) | Not implemented |
-| Colonizer landing blocked only by Planetary Defense Guns (not by factories) | Not implemented (currently any hostile factory blocks landing) |
-| Bombers/Fighters can shoot Planetary Defense Guns | Not implemented (no PDG yet) |
+| Planetary Defense Gun (fires at orbiting ships, blocks hostile Colonizer landing) | Implemented |
+| Colonizer landing blocked only by Planetary Defense Guns (not by factories) | Implemented |
+| Bombers/Fighters can shoot Planetary Defense Guns | Implemented |

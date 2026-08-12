@@ -7,8 +7,10 @@ import {
   HunterIndustry,
   Industry,
   IndustryConstruction,
+  IndustryOrder,
   Owner,
   Planet,
+  PlanetaryDefenseGun,
   Refinery,
   Spaceport,
 } from '../model/index.ts';
@@ -24,6 +26,7 @@ export type BuildOption = {
 
 export class InfoPanel {
   private readonly root: HTMLElement;
+  private sized = false;
   constructor(
     private readonly onBuild: (command: string) => void,
     private readonly onSell: (index: number) => void,
@@ -41,6 +44,86 @@ export class InfoPanel {
       return;
     }
     this.root.innerHTML = this.render(planet, buildOptions);
+    this.ensureSize();
+  }
+
+  private ensureSize() {
+    if (this.sized) return;
+    this.sized = true;
+    const maxCost = Math.max(
+      GameConstants.Extractor.MaterialCost,
+      GameConstants.Refinery.MaterialCost,
+      GameConstants.Collector.MaterialCost,
+      GameConstants.ColonizerIndustry.MaterialCost,
+      GameConstants.HunterIndustry.MaterialCost,
+      GameConstants.BomberIndustry.MaterialCost,
+      GameConstants.PlanetaryDefenseGun.MaterialCost,
+    );
+    const maxRefund = Math.floor(maxCost / 2);
+    const names = [
+      ViewStrings.InfoPanel.freeSlot,
+      ViewStrings.InfoPanel.extractor,
+      ViewStrings.InfoPanel.refinery,
+      ViewStrings.InfoPanel.collector,
+      ViewStrings.InfoPanel.colonizerFactory,
+      ViewStrings.InfoPanel.hunterFactory,
+      ViewStrings.InfoPanel.bomberFactory,
+      ViewStrings.InfoPanel.planetaryDefenseGun,
+      ViewStrings.InfoPanel.spaceport,
+      ViewStrings.InfoPanel.unknown,
+    ];
+    const states = [
+      ViewStrings.InfoPanel.free,
+      ViewStrings.InfoPanel.waiting,
+      ViewStrings.InfoPanel.building(100),
+      ViewStrings.InfoPanel.producing(100),
+      ViewStrings.InfoPanel.buildingShip(100),
+      ViewStrings.InfoPanel.shipReady,
+      ViewStrings.InfoPanel.active,
+      ViewStrings.InfoPanel.missing,
+    ];
+    const buildLabels = [
+      ViewStrings.Buttons.extractor,
+      ViewStrings.Buttons.refinery,
+      ViewStrings.Buttons.collector,
+      ViewStrings.Buttons.colonizer,
+      ViewStrings.Buttons.hunter,
+      ViewStrings.Buttons.bomber,
+      ViewStrings.Buttons.defense,
+    ].map((label) => label + ViewStrings.Labels.materialSuffix(maxCost));
+    const sellLabels = [ViewStrings.Labels.sell(0), ViewStrings.Labels.sell(maxRefund)];
+    const others = [
+      ViewStrings.InfoPanel.title,
+      ViewStrings.InfoPanel.resources,
+      ViewStrings.InfoPanel.industries,
+      ViewStrings.InfoPanel.build,
+      ViewStrings.InfoPanel.removeTarget,
+      ViewStrings.InfoPanel.ownerNone,
+      ViewStrings.InfoPanel.ownerComputer,
+      ViewStrings.InfoPanel.ownerPlayer,
+    ];
+
+    const measurer = document.createElement('span');
+    measurer.style.visibility = 'hidden';
+    measurer.style.position = 'absolute';
+    measurer.style.whiteSpace = 'pre';
+    this.root.appendChild(measurer);
+    const widest = (texts: string[]) => texts.reduce((max, text) => {
+      measurer.textContent = text;
+      return Math.max(max, measurer.getBoundingClientRect().width);
+    }, 0);
+    const industryRow = widest(names) + widest(states) + widest(sellLabels);
+    const content = Math.max(industryRow, widest(buildLabels), widest(others));
+    measurer.remove();
+
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const gap = 0.5 * rem * 2;
+    const padding = 0.75 * rem * 2;
+    const border = 2;
+    const width = content + gap + padding + border;
+    this.root.style.width = `${width}px`;
+    this.root.style.minWidth = `${width}px`;
+    this.root.style.maxWidth = `${width}px`;
   }
 
   private handleClick(event: MouseEvent) {
@@ -132,6 +215,7 @@ export class InfoPanel {
   }
 
   private sellRefund(industry: Industry): number {
+    if (industry instanceof IndustryOrder) return 0;
     const cost = industry instanceof IndustryConstruction
       ? industry.getFactory().getMaterialCost()
       : industry.getMaterialCost();
@@ -142,6 +226,9 @@ export class InfoPanel {
     if (industry instanceof FreeIndustry) {
       return { name: ViewStrings.InfoPanel.freeSlot, state: ViewStrings.InfoPanel.free };
     }
+    if (industry instanceof IndustryOrder) {
+      return { name: this.industryName(industry.getFactory()), state: ViewStrings.InfoPanel.waiting };
+    }
     if (industry instanceof IndustryConstruction) {
       const progress = Math.round(industry.getProgress() * 100);
       return { name: this.industryName(industry.getFactory()), state: ViewStrings.InfoPanel.building(progress) };
@@ -150,6 +237,9 @@ export class InfoPanel {
     const name = this.industryName(industry);
     if (industry instanceof Extractor || industry instanceof Refinery || industry instanceof Collector) {
       return { name, state: ViewStrings.InfoPanel.producing(progress) };
+    }
+    if (industry instanceof PlanetaryDefenseGun) {
+      return { name, state: ViewStrings.InfoPanel.active };
     }
     if (progress >= 100) return { name, state: ViewStrings.InfoPanel.shipReady };
     return { name, state: ViewStrings.InfoPanel.buildingShip(progress) };
@@ -162,6 +252,7 @@ export class InfoPanel {
     if (industry instanceof ColonizerIndustry) return ViewStrings.InfoPanel.colonizerFactory;
     if (industry instanceof HunterIndustry) return ViewStrings.InfoPanel.hunterFactory;
     if (industry instanceof BomberIndustry) return ViewStrings.InfoPanel.bomberFactory;
+    if (industry instanceof PlanetaryDefenseGun) return ViewStrings.InfoPanel.planetaryDefenseGun;
     if (industry instanceof Spaceport) return ViewStrings.InfoPanel.spaceport;
     return ViewStrings.InfoPanel.unknown;
   }

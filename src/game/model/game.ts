@@ -4,6 +4,7 @@ import { Extractor } from './extractor.ts';
 import { IndustryConstruction } from './industry.ts';
 import { Owner, RandomSource } from './owner.ts';
 import { Planet } from './planet.ts';
+import { PlanetaryDefenseGun } from './planetary-defense-gun.ts';
 import { Refinery } from './refinery.ts';
 import { Ship, ShotEffect } from './ship.ts';
 import { Space } from './space.ts';
@@ -46,6 +47,7 @@ export class Game {
     this.playerShips.forEach((ship) => { ship.spreadAlongOrbit(this.playerShips); ship.update(dt); });
     this.computerShips.forEach((ship) => { ship.spreadAlongOrbit(this.computerShips); ship.update(dt); });
     this.space.update(dt);
+    this.firePlanetaryDefenseGuns();
     const uncontested = this.space.getPlanetsThatBelongTo(Owner.None);
     this.space.getPlanetsThatBelongTo(Owner.Computer).forEach((planet) => {
       if ((planet.getTarget() === planet || planet.getTarget().hasFactories()) && uncontested.length) {
@@ -53,6 +55,17 @@ export class Game {
       }
       this.buildComputerEconomy(planet);
     });
+  }
+
+  private firePlanetaryDefenseGuns() {
+    for (const planet of this.space.planets) {
+      if (planet.getOwner() === Owner.None) continue;
+      const opponents = planet.getOwner() === Owner.Player ? this.computerShips : this.playerShips;
+      for (const gun of planet.getPlanetaryDefenseGuns()) {
+        const effect = gun.industry.fire(gun.position, opponents);
+        if (effect) this.shotEffects.push(effect);
+      }
+    }
   }
 
   private buildComputerEconomy(planet: Planet) {
@@ -67,6 +80,7 @@ export class Game {
       [!hasType(Refinery), () => planet.buildIndustry(new Refinery(), Owner.Computer)],
       [!hasType(Collector), () => planet.buildIndustry(new Collector(), Owner.Computer)],
       [!hasType(ColonizerIndustry), () => planet.buildIndustry(new ColonizerIndustry(this.computerShips), Owner.Computer)],
+      [!hasType(PlanetaryDefenseGun), () => planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer)],
     ];
 
     for (const [needed, build] of steps) {

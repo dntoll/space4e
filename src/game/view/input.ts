@@ -1,4 +1,4 @@
-export type Command = 'extractor' | 'refinery' | 'collector' | 'colonizer' | 'hunter' | 'bomber' | 'sell' | 'pause' | 'slow' | 'normal';
+export type Command = 'extractor' | 'refinery' | 'collector' | 'colonizer' | 'hunter' | 'bomber' | 'defense' | 'sell' | 'pause' | 'slow' | 'normal';
 export type PointerGesture = {
   start: { x: number; y: number };
   end: { x: number; y: number };
@@ -38,7 +38,7 @@ export class Input {
     });
     canvas.addEventListener('pointercancel', () => { this.pointerDown = false; });
     window.addEventListener('keyup', (event) => {
-      const command = ({ c: 'colonizer', h: 'hunter', b: 'bomber', e: 'extractor', r: 'refinery', l: 'collector', s: 'sell', ' ': 'pause' } as Record<string, Command>)[event.key.toLowerCase()];
+      const command = ({ c: 'colonizer', h: 'hunter', b: 'bomber', e: 'extractor', r: 'refinery', l: 'collector', d: 'defense', s: 'sell', ' ': 'pause' } as Record<string, Command>)[event.key.toLowerCase()];
       if (command) this.commands.push(command);
     });
     document.querySelectorAll<HTMLButtonElement>('[data-command]').forEach((button) => {

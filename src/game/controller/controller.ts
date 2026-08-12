@@ -1,4 +1,4 @@
-import { BomberIndustry, ColonizerIndustry, Collector, Extractor, FreeIndustry, Game, HunterIndustry, Industry, Owner, Planet, Refinery } from '../model/index.ts';
+import { BomberIndustry, ColonizerIndustry, Collector, Extractor, FreeIndustry, Game, HunterIndustry, Industry, Owner, Planet, PlanetaryDefenseGun, Refinery } from '../model/index.ts';
 import { Command, Input } from '../view/input.ts';
 import { BuildOption, InfoPanel } from '../view/info-panel.ts';
 import { ViewStrings } from '../view/view-strings.ts';
@@ -24,6 +24,7 @@ export class Controller {
       ['colonizer', () => new ColonizerIndustry(this.game.playerShips), new ColonizerIndustry(this.game.playerShips).getMaterialCost()],
       ['hunter', () => new HunterIndustry(this.game.playerShips), new HunterIndustry(this.game.playerShips).getMaterialCost()],
       ['bomber', () => new BomberIndustry(this.game.playerShips), new BomberIndustry(this.game.playerShips).getMaterialCost()],
+      ['defense', () => new PlanetaryDefenseGun(), new PlanetaryDefenseGun().getMaterialCost()],
     ];
     this.infoPanel = new InfoPanel(
       (command) => this.attemptBuild(command as Command),
@@ -51,12 +52,11 @@ export class Controller {
   }
   private buildOptions(): BuildOption[] | undefined {
     if (!this.focus || this.focus.getOwner() !== Owner.Player) return undefined;
-    const material = this.focus.inventory.material;
     return this.buildCommands.map(([command, , cost]) => ({
       command,
       label: ViewStrings.Buttons[command as keyof typeof ViewStrings.Buttons],
       cost,
-      enabled: material >= cost,
+      enabled: true,
     }));
   }
   private handleKeyboardBuildCommands() {
@@ -101,13 +101,11 @@ export class Controller {
       this.selectedIndustryIndex = industryHit.index;
       this.renderer.setSelectedPlanet(this.focus);
       this.renderer.setSelectedIndustry(this.selectedIndustryIndex);
-      this.renderer.focusOn(this.focus);
       return;
     }
     this.focus = endPlanet;
     this.clearIndustrySelection();
     this.renderer.setSelectedPlanet(this.focus);
-    if (this.focus) this.renderer.focusOn(this.focus);
   }
   private clearSelectionIfDestroyed() {
     if (this.selectedIndustryIndex === undefined || !this.focus) return;

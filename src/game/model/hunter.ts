@@ -30,11 +30,26 @@ export class Hunter extends Ship {
       const targetPlanet = this.home.getTargetPlanet();
       const farAwayFromTargetPlanet = this.center.distanceTo(targetPlanet.centerPosition) > this.targettableDistance;
       if (farAwayFromTargetPlanet) {
-        //go directyly to target planet if far away
+        //go directly to target planet if far away
         this.goToTargetPlanet();
-      } else {
-        //orbit around target planet if close enough
-        this.orbitAroundPlanet(targetPlanet, targetPlanet.radius * GameConstants.Ship.OrbitRadiusMultiplier);
+        return undefined;
+      }
+      //orbit around target planet if close enough
+      this.orbitAroundPlanet(targetPlanet, targetPlanet.radius * GameConstants.Ship.OrbitRadiusMultiplier);
+
+      //shoot hostile planetary defense guns in range
+      if (targetPlanet.getOwner() !== this.home.getOwner()) {
+        const pdg = targetPlanet.getPlanetaryDefenseGuns()
+          .filter((gun) => this.center.distanceTo(gun.position) < this.weaponRange)
+          .sort((a, b) => this.center.distanceTo(a.position) - this.center.distanceTo(b.position))[0];
+        if (pdg) {
+          this.setAimDirection(pdg.position);
+          if (this.shotCooldown > 0) return undefined;
+          this.shotCooldown = 1;
+          const effect = { from: new Position(this.center.x, this.center.y), to: new Position(pdg.position.x, pdg.position.y), remaining: .3, kind: 'shot' as const, source: this };
+          targetPlanet.destroyFactory(pdg.index);
+          return effect;
+        }
       }
       return undefined;
     } else {

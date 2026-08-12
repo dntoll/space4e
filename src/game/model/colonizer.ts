@@ -22,7 +22,7 @@ export class Colonizer extends Ship {
 
 
     if (targetBelongsToAnotherOwner) {
-      const surfaceDistance = targetPlanet.radius / 2 + this.radius;
+      const surfaceDistance = targetPlanet.radius + this.radius;
       const landingDistance = surfaceDistance + this.radius;
       const distanceToCenter = this.center.distanceTo(targetPlanet.centerPosition);
 
@@ -33,7 +33,7 @@ export class Colonizer extends Ship {
         this.setAimDirection(targetPlanet.centerPosition, 0);
         this.speed = 0;
 
-        if (!targetPlanet.hasFactories()) {
+        if (!targetPlanet.hasPlanetaryDefenseGuns()) {
           const owner = this.home.getOwner();
           targetPlanet.setOwner(owner);
           targetPlanet.destroyConstructions();

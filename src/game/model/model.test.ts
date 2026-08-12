@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameConstants } from '../game-constants.ts';
-import { Bomber, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, IndustryConstruction, Owner, Planet, PlanetInventory, Position, Refinery, Ship, Space, Spaceport } from './index.ts';
+import { Bomber, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, IndustryConstruction, IndustryOrder, Owner, Planet, PlanetInventory, PlanetaryDefenseGun, Position, Refinery, Ship, Space, Spaceport } from './index.ts';
 
 describe('model geometry', () => {
   it('normalizes directions and turns the shortest way', () => {
@@ -157,6 +157,30 @@ describe('game world', () => {
       expect(ship.isOrbitingAround(target.centerPosition)).toBe(true);
     });
   });
+  it('bomber destroys hostile factories while orbiting', () => {
+    const home = new Planet(new Position(.5, .5), .1);
+    const target = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    target.setOwner(Owner.Computer);
+    target.inventory.material = 10;
+    target.buildIndustry(new Extractor(), Owner.Computer);
+    target.buildIndustry(new Refinery(), Owner.Computer);
+    target.update(2.1);
+    expect(target.hasFactories()).toBe(true);
+
+    home.setTarget(target, Owner.Player);
+    const bomber = new Bomber(new Position(.13, 0));
+    bomber.setHome(home);
+    bomber.orbitAround(target.centerPosition, .13);
+
+    for (let i = 0; i < 4000 && target.hasFactories(); i += 1) {
+      bomber.updateBehavior(.1);
+      bomber.avoidPlanets([home, target]);
+      bomber.update(.1);
+    }
+
+    expect(target.hasFactories()).toBe(false);
+  });
   it('colonizes near the surface even if the colonizer is still moving', () => {
     const home = new Planet(new Position(.5, .5), .1);
     const target = new Planet(new Position(0, 0), .1);
@@ -174,13 +198,13 @@ describe('game world', () => {
     expect(target.getOwner()).toBe(Owner.Player);
     expect(colonizer.isAlive()).toBe(false);
   });
-  it('waits on the surface until the target planet factories are destroyed', () => {
+  it('waits on the surface until the target planet defense guns are destroyed', () => {
     const home = new Planet(new Position(.5, .5), .1);
     const target = new Planet(new Position(0, 0), .1);
     home.setOwner(Owner.Player);
     target.setOwner(Owner.Computer);
     target.inventory.material = 10;
-    target.buildIndustry(new ColonizerIndustry([]), Owner.Computer);
+    target.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer);
     target.update(2.1);
     home.setTarget(target, Owner.Player);
 
@@ -189,13 +213,31 @@ describe('game world', () => {
     colonizer.orbitAround(target.centerPosition, 1);
     colonizer.updateBehavior(.1);
 
-    const surfaceDistance = target.radius / 2 + colonizer.radius;
+    const surfaceDistance = target.radius + colonizer.radius;
     expect(colonizer.center.distanceTo(target.centerPosition)).toBeCloseTo(surfaceDistance);
     expect(colonizer.shipSpeed).toBe(0);
     expect(colonizer.isAlive()).toBe(true);
     expect(target.getOwner()).toBe(Owner.Computer);
 
     target.killFactory();
+    colonizer.updateBehavior(.1);
+
+    expect(target.getOwner()).toBe(Owner.Player);
+    expect(colonizer.isAlive()).toBe(false);
+  });
+  it('hostile factories do not block colonizer landing', () => {
+    const home = new Planet(new Position(.5, .5), .1);
+    const target = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    target.setOwner(Owner.Computer);
+    target.inventory.material = 10;
+    target.buildIndustry(new Extractor(), Owner.Computer);
+    target.update(2.1);
+    home.setTarget(target, Owner.Player);
+
+    const colonizer = new Colonizer(new Position(-.056, 0));
+    colonizer.setHome(home);
+    colonizer.orbitAround(target.centerPosition, .056);
     colonizer.updateBehavior(.1);
 
     expect(target.getOwner()).toBe(Owner.Player);
@@ -219,10 +261,11 @@ describe('game world', () => {
     expect(ship.shipSpeed).toBeLessThan(initialSpeed);
     expect(ship.shipSpeed).toBeGreaterThanOrEqual(0);
   });
-  it('creates ships at the factory that produces them', () => {
+  it('creates ships at the spaceport launch position', () => {
     const planet = new Planet(new Position(.2, .3), .1);
     const target = new Planet(new Position(.8, .8), .1);
     planet.setOwner(Owner.Player);
+    planet.placeSpaceport([], Owner.Player);
     planet.inventory.material = 10;
     planet.setTarget(target, Owner.Player);
     const ships: Ship[] = [];
@@ -230,11 +273,9 @@ describe('game world', () => {
     planet.update(2.1);
     planet.update(3.1);
     expect(ships).toHaveLength(1);
-    expect(ships[0].center.x).toBeCloseTo(planet.getIndustryPosition(0).x);
-    expect(ships[0].center.y).toBeCloseTo(planet.getIndustryPosition(0).y);
-    const expectedDirection = planet.centerPosition.getDirectionTo(planet.getIndustryPosition(0));
-    expect(ships[0].direction.x).toBeCloseTo(expectedDirection.x);
-    expect(ships[0].direction.y).toBeCloseTo(expectedDirection.y);
+    const spawn = planet.getSpaceportSpawnPosition();
+    expect(ships[0].center.x).toBeCloseTo(spawn.x);
+    expect(ships[0].center.y).toBeCloseTo(spawn.y);
   });
   it('leaves orbit when the home planet gets a new target', () => {
     const home = new Planet(new Position(0, 0), .1);
@@ -264,6 +305,7 @@ describe('game world', () => {
     planet.setOwner(Owner.Computer);
     planet.inventory.material = 10;
     planet.buildIndustry(new ColonizerIndustry([]), Owner.Computer);
+    planet.update(.1);
     expect(planet.parts[0]).toBeInstanceOf(IndustryConstruction);
     planet.destroyConstructions();
     expect(planet.parts[0]).toBeInstanceOf(FreeIndustry);
@@ -336,13 +378,29 @@ describe('economy and energy', () => {
     expect(planet.inventory.energy).toBeCloseTo(1, 1);
   });
 
-  it('requires material to build and deducts it from the inventory', () => {
+  it('queues a build order without requiring material and starts when material arrives', () => {
     const planet = new Planet(new Position(0, 0), .1);
     planet.setOwner(Owner.Player);
-    planet.inventory.material = 2;
-    expect(() => planet.buildIndustry(new Extractor(), Owner.Player)).toThrow();
-    planet.inventory.material = 3;
+    planet.inventory.material = 0;
     expect(() => planet.buildIndustry(new Extractor(), Owner.Player)).not.toThrow();
+    expect(planet.parts[0]).toBeInstanceOf(IndustryOrder);
+    expect(planet.inventory.material).toBe(0);
+    planet.update(.1);
+    expect(planet.parts[0]).toBeInstanceOf(IndustryOrder);
+    planet.inventory.material = 3;
+    planet.update(.1);
+    expect(planet.parts[0]).toBeInstanceOf(IndustryConstruction);
+    expect(planet.inventory.material).toBe(0);
+  });
+
+  it('selling a queued order frees the slot with no refund', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Player);
+    planet.inventory.material = 0;
+    planet.buildIndustry(new Extractor(), Owner.Player);
+    expect(planet.parts[0]).toBeInstanceOf(IndustryOrder);
+    planet.sellIndustry(0, Owner.Player);
+    expect(planet.parts[0]).toBeInstanceOf(FreeIndustry);
     expect(planet.inventory.material).toBe(0);
   });
 
@@ -394,6 +452,7 @@ describe('economy and energy', () => {
     planet.setOwner(Owner.Player);
     planet.inventory.material = 10;
     planet.buildIndustry(new Extractor(), Owner.Player);
+    planet.update(.1);
     expect(planet.inventory.material).toBe(7);
     expect(planet.parts[0]).toBeInstanceOf(IndustryConstruction);
     planet.sellIndustry(0, Owner.Player);
@@ -581,5 +640,69 @@ describe('economy and energy', () => {
     expect(home.inventory.minedOre).toBeCloseTo(5, 0);
     expect(home.inventory.material).toBeCloseTo(5, 0);
     expect(destination.inventory.minedOre).toBeCloseTo(10, 0);
+  });
+});
+
+describe('planetary defense guns', () => {
+  it('fires at hostile ships in range and kills them', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Computer);
+    planet.inventory.material = 10;
+    planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer);
+    planet.update(2.1);
+
+    const gun = planet.getPlanetaryDefenseGuns()[0];
+    const ship = new Hunter(new Position(gun.position.x, gun.position.y));
+    const effect = gun.industry.fire(gun.position, [ship]);
+    expect(effect).toBeDefined();
+    expect(effect!.kind).toBe('shot');
+    expect(ship.isAlive()).toBe(false);
+  });
+
+  it('does not fire at ships out of range', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Player);
+    planet.inventory.material = 10;
+    planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Player);
+    planet.update(2.1);
+
+    const gun = planet.getPlanetaryDefenseGuns()[0];
+    const farShip = new Hunter(new Position(1, 1));
+    const effect = gun.industry.fire(gun.position, [farShip]);
+    expect(effect).toBeUndefined();
+    expect(farShip.isAlive()).toBe(true);
+  });
+
+  it('respects its cooldown', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Computer);
+    planet.inventory.material = 10;
+    planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer);
+    planet.update(2.1);
+
+    const gun = planet.getPlanetaryDefenseGuns()[0];
+    const first = new Hunter(new Position(gun.position.x, gun.position.y));
+    expect(gun.industry.fire(gun.position, [first])).toBeDefined();
+    expect(first.isAlive()).toBe(false);
+    const second = new Hunter(new Position(gun.position.x, gun.position.y));
+    expect(gun.industry.fire(gun.position, [second])).toBeUndefined();
+    expect(second.isAlive()).toBe(true);
+  });
+
+  it('game fires defense guns at orbiting hostile ships', () => {
+    const game = new Game(Math.random);
+    const computerPlanet = game.space.getPlanetsThatBelongTo(Owner.Computer)[0];
+    computerPlanet.inventory.material = 10;
+    computerPlanet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer);
+    computerPlanet.update(2.1);
+
+    const gun = computerPlanet.getPlanetaryDefenseGuns()[0];
+    const hunter = new Hunter(new Position(gun.position.x, gun.position.y));
+    hunter.setHome(computerPlanet);
+    game.playerShips.push(hunter);
+
+    for (let i = 0; i < 30 && hunter.isAlive(); i += 1) game.update(.1);
+
+    expect(hunter.isAlive()).toBe(false);
   });
 });

@@ -1,6 +1,8 @@
 import { GameConstants } from '../game-constants.ts';
 import { FreeIndustry, Industry, IndustryConstruction } from './industry.ts';
+import { IndustryOrder } from './industry-order.ts';
 import { Owner } from './owner.ts';
+import { PlanetaryDefenseGun } from './planetary-defense-gun.ts';
 import { PlanetInventory } from './planet-inventory.ts';
 import { Position } from './position.ts';
 import { Ship } from './ship.ts';
@@ -46,8 +48,8 @@ export class Planet {
   getIndustryPosition(index: number) {
     const angle = index * 2 * Math.PI / this.parts.length;
     return new Position(
-      this.centerPosition.x + Math.cos(angle) * this.radius / 2,
-      this.centerPosition.y + Math.sin(angle) * this.radius / 2,
+      this.centerPosition.x + Math.cos(angle) * this.radius,
+      this.centerPosition.y + Math.sin(angle) * this.radius,
     );
   }
   getIndustrySpawnPosition(index: number) {
@@ -64,10 +66,20 @@ export class Planet {
     );
   }
   update(dt: number) {
+    const spawnPosition = this.hasSpaceport() ? this.getSpaceportSpawnPosition() : undefined;
     for (let i = 0; i < this.parts.length; i += 1) {
       const part = this.parts[i];
-      part.update(dt, this.getIndustryPosition(i), this.getIndustrySpawnPosition(i), this);
-      if (part instanceof IndustryConstruction && part.isComplete()) this.parts[i] = part.getFactory();
+      if (part instanceof IndustryOrder) {
+        const cost = part.getFactory().getMaterialCost();
+        if (this.inventory.material >= cost) {
+          this.inventory.material -= cost;
+          this.parts[i] = new IndustryConstruction(part.getFactory());
+        }
+      }
+      const current = this.parts[i];
+      const launchPosition = spawnPosition ?? this.getIndustrySpawnPosition(i);
+      current.update(dt, this.getIndustryPosition(i), launchPosition, this);
+      if (current instanceof IndustryConstruction && current.isComplete()) this.parts[i] = current.getFactory();
     }
     this.spaceport?.update(dt, this.centerPosition, this.getSpaceportSpawnPosition(), this);
   }
@@ -75,38 +87,50 @@ export class Planet {
     if (owner !== this.owner) throw new Error('Wrong owner');
     const index = this.parts.findIndex((part) => part instanceof FreeIndustry);
     if (index < 0) throw new Error('No free industry');
-    const cost = industry.getMaterialCost();
-    if (this.inventory.material < cost) throw new Error('Not enough material');
-    this.inventory.material -= cost;
-    this.parts[index] = new IndustryConstruction(industry);
+    this.parts[index] = new IndustryOrder(industry);
   }
   sellIndustry(index: number, owner: Owner) {
     if (owner !== this.owner) throw new Error('Wrong owner');
     const part = this.parts[index];
     if (!part || part instanceof FreeIndustry) throw new Error('Nothing to sell');
-    const invested = part instanceof IndustryConstruction ? part.getFactory().getMaterialCost() : part.getMaterialCost();
-    this.inventory.material += Math.floor(invested / 2);
+    if (!(part instanceof IndustryOrder)) {
+      const invested = part instanceof IndustryConstruction ? part.getFactory().getMaterialCost() : part.getMaterialCost();
+      this.inventory.material += Math.floor(invested / 2);
+    }
     this.parts[index] = new FreeIndustry();
   }
   expandSlotsTo(count: number) {
     while (this.parts.length < count) this.parts.push(new FreeIndustry());
   }
   hasFactories() { return this.getFactories().length > 0; }
+  hasPlanetaryDefenseGuns() {
+    return this.parts.some((part) => part instanceof PlanetaryDefenseGun);
+  }
+  getPlanetaryDefenseGuns() {
+    return this.parts
+      .map((industry, index) => ({ industry, index, position: this.getIndustryPosition(index) }))
+      .filter((entry): entry is { industry: PlanetaryDefenseGun; index: number; position: Position } => entry.industry instanceof PlanetaryDefenseGun);
+  }
   getFactories() {
     return this.parts
       .map((industry, index) => ({ industry, index, position: this.getIndustryPosition(index) }))
-      .filter(({ industry }) => !(industry instanceof FreeIndustry) && !(industry instanceof IndustryConstruction));
+      .filter(({ industry }) => !(industry instanceof FreeIndustry) && !(industry instanceof IndustryConstruction) && !(industry instanceof IndustryOrder));
   }
-  getFactoryInRange(position: Position, range: number) {
-    return this.getFactories().find((factory) => factory.position.distanceTo(position) < range);
-  }
-  getClosestFactory(position: Position) {
-    return this.getFactories().sort((a, b) => a.position.distanceTo(position) - b.position.distanceTo(position))[0];
+  getClosestVisibleFactory(observer: Position) {
+    const ox = observer.x - this.centerPosition.x;
+    const oy = observer.y - this.centerPosition.y;
+    return this.getFactories()
+      .filter((factory) => {
+        const fx = factory.position.x - this.centerPosition.x;
+        const fy = factory.position.y - this.centerPosition.y;
+        return ox * fx + oy * fy > 0;
+      })
+      .sort((a, b) => a.position.distanceTo(observer) - b.position.distanceTo(observer))[0];
   }
   destroyFactory(index: number) { this.parts[index] = new FreeIndustry(); }
   destroyConstructions() {
     for (let i = 0; i < this.parts.length; i += 1) {
-      if (this.parts[i] instanceof IndustryConstruction) this.parts[i] = new FreeIndustry();
+      if (this.parts[i] instanceof IndustryConstruction || this.parts[i] instanceof IndustryOrder) this.parts[i] = new FreeIndustry();
     }
   }
   killFactory() { this.getFactories().forEach(({ index }) => this.destroyFactory(index)); }
