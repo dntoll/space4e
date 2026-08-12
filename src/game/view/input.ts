@@ -1,4 +1,4 @@
-export type Command = 'colonizer' | 'hunter' | 'bomber' | 'pause' | 'slow' | 'normal';
+export type Command = 'extractor' | 'refinery' | 'collector' | 'colonizer' | 'hunter' | 'bomber' | 'sell' | 'pause' | 'slow' | 'normal';
 export type PointerGesture = {
   start: { x: number; y: number };
   end: { x: number; y: number };
@@ -10,6 +10,7 @@ export class Input {
   private pointerDown = false;
   private pointerMoved = false;
   private pointerStart = { x: 0, y: 0 };
+  private pointerJustDown = false;
   private gesture?: PointerGesture;
   private commands: Command[] = [];
   constructor(private canvas: HTMLCanvasElement) {
@@ -18,6 +19,7 @@ export class Input {
       this.pointerMoved = false;
       this.setPointer(event);
       this.pointerStart = { ...this.mouse };
+      this.pointerJustDown = true;
       canvas.setPointerCapture(event.pointerId);
     });
     canvas.addEventListener('pointermove', (event) => this.setPointer(event));
@@ -36,7 +38,7 @@ export class Input {
     });
     canvas.addEventListener('pointercancel', () => { this.pointerDown = false; });
     window.addEventListener('keyup', (event) => {
-      const command = ({ c: 'colonizer', h: 'hunter', b: 'bomber', ' ': 'pause' } as Record<string, Command>)[event.key.toLowerCase()];
+      const command = ({ c: 'colonizer', h: 'hunter', b: 'bomber', e: 'extractor', r: 'refinery', l: 'collector', s: 'sell', ' ': 'pause' } as Record<string, Command>)[event.key.toLowerCase()];
       if (command) this.commands.push(command);
     });
     document.querySelectorAll<HTMLButtonElement>('[data-command]').forEach((button) => {
@@ -44,6 +46,11 @@ export class Input {
     });
   }
   isPointerDown() { return this.pointerDown; }
+  consumePointerDown(): { x: number; y: number } | undefined {
+    if (!this.pointerJustDown) return undefined;
+    this.pointerJustDown = false;
+    return { ...this.pointerStart };
+  }
   private setPointer(event: PointerEvent) {
     const rect = this.canvas.getBoundingClientRect();
     this.mouse = { x: event.clientX - rect.left, y: event.clientY - rect.top };

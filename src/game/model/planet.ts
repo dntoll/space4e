@@ -1,16 +1,32 @@
+import { GameConstants } from '../game-constants.ts';
 import { FreeIndustry, Industry, IndustryConstruction } from './industry.ts';
 import { Owner } from './owner.ts';
+import { PlanetInventory } from './planet-inventory.ts';
 import { Position } from './position.ts';
+import { Ship } from './ship.ts';
+import { Spaceport } from './spaceport.ts';
 
 export class Planet {
-  readonly parts: Industry[] = [new FreeIndustry(), new FreeIndustry(), new FreeIndustry()];
+  readonly parts: Industry[];
+  readonly inventory = new PlanetInventory();
+  private spaceport?: Spaceport;
   private target: Planet = this;
   private owner: Owner = Owner.None;
 
-  constructor(public centerPosition: Position, public radius: number) {}
+  constructor(public centerPosition: Position, public radius: number, slotCount = GameConstants.Planet.MinSlots) {
+    this.parts = new Array(slotCount).fill(null).map(() => new FreeIndustry());
+  }
+
   getTarget() { return this.target; }
   getOwner() { return this.owner; }
   setOwner(owner: Owner) { this.owner = owner; }
+  hasSpaceport() { return this.spaceport !== undefined; }
+  getSpaceport() { return this.spaceport; }
+  placeSpaceport(allies: Ship[], owner: Owner) {
+    if (owner !== this.owner) throw new Error('Wrong owner');
+    this.spaceport = new Spaceport(allies);
+  }
+
   setTarget(target: Planet, owner: Owner) {
     if (owner !== this.owner) throw new Error('Wrong owner');
     if (target !== this && target.getTarget() === this && target.getOwner() === owner) target.setTarget(target, owner);
@@ -41,18 +57,39 @@ export class Planet {
       this.centerPosition.y + Math.sin(angle) * this.radius * 1.25,
     );
   }
+  getSpaceportSpawnPosition() {
+    return new Position(
+      this.centerPosition.x + this.radius * 1.25,
+      this.centerPosition.y,
+    );
+  }
   update(dt: number) {
     for (let i = 0; i < this.parts.length; i += 1) {
       const part = this.parts[i];
       part.update(dt, this.getIndustryPosition(i), this.getIndustrySpawnPosition(i), this);
       if (part instanceof IndustryConstruction && part.isComplete()) this.parts[i] = part.getFactory();
     }
+    this.spaceport?.update(dt, this.centerPosition, this.getSpaceportSpawnPosition(), this);
   }
   buildIndustry(industry: Industry, owner: Owner) {
     if (owner !== this.owner) throw new Error('Wrong owner');
     const index = this.parts.findIndex((part) => part instanceof FreeIndustry);
     if (index < 0) throw new Error('No free industry');
+    const cost = industry.getMaterialCost();
+    if (this.inventory.material < cost) throw new Error('Not enough material');
+    this.inventory.material -= cost;
     this.parts[index] = new IndustryConstruction(industry);
+  }
+  sellIndustry(index: number, owner: Owner) {
+    if (owner !== this.owner) throw new Error('Wrong owner');
+    const part = this.parts[index];
+    if (!part || part instanceof FreeIndustry) throw new Error('Nothing to sell');
+    const invested = part instanceof IndustryConstruction ? part.getFactory().getMaterialCost() : part.getMaterialCost();
+    this.inventory.material += Math.floor(invested / 2);
+    this.parts[index] = new FreeIndustry();
+  }
+  expandSlotsTo(count: number) {
+    while (this.parts.length < count) this.parts.push(new FreeIndustry());
   }
   hasFactories() { return this.getFactories().length > 0; }
   getFactories() {

@@ -1,10 +1,13 @@
 import {
   Bomber,
   BomberIndustry,
+  Collector,
   Colonizer,
   ColonizerIndustry,
   Direction,
+  Extractor,
   FreeIndustry,
+  FreightShip,
   Game,
   Hunter,
   HunterIndustry,
@@ -13,6 +16,7 @@ import {
   Owner,
   Planet,
   Position,
+  Refinery,
   Ship,
 } from '../model/index.ts';
 
@@ -48,11 +52,12 @@ export class Renderer {
   private cameraFocus?: Position;
   private panPointer?: { id: number; x: number; y: number };
   private selectedPlanet?: Planet;
+  private selectedIndustryIndex?: number;
   constructor(private canvas: HTMLCanvasElement, private game: Game) {
     this.resize();
     window.addEventListener('resize', () => this.resize());
     canvas.addEventListener('pointerdown', (event) => {
-      if (this.selectedPlanet && this.getPlanetAt(this.pointerPosition(event)) === this.selectedPlanet) return;
+      if (this.getPlanetAt(this.pointerPosition(event))) return;
       this.panPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
       canvas.setPointerCapture(event.pointerId);
     });
@@ -103,6 +108,7 @@ export class Renderer {
     this.camera.setFocus(this.cameraFocus);
   }
   setSelectedPlanet(planet?: Planet) { this.selectedPlanet = planet; }
+  setSelectedIndustry(index?: number) { this.selectedIndustryIndex = index; }
   private pointerPosition(event: PointerEvent) {
     const rect = this.canvas.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -142,9 +148,15 @@ export class Renderer {
   private drawPlanet(ctx: CanvasRenderingContext2D, planet: Planet, focus?: Planet) {
     const center = this.camera.modelToView(planet.centerPosition); const radius = this.camera.radius(planet.radius);
     ctx.fillStyle = this.color(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x, center.y, radius / 2, 0, Math.PI * 2); ctx.fill();
+    if (planet.hasSpaceport()) {
+      ctx.strokeStyle = '#a0a0a0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius / 2 + 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     if (focus === planet) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
     planet.parts.forEach((part, index) => {
-      if (part instanceof FreeIndustry) return;
       const factoryModelPosition = planet.getIndustryPosition(index);
       const factoryCenter = this.camera.modelToView(factoryModelPosition);
       const radial = new Direction(
@@ -153,6 +165,18 @@ export class Renderer {
       );
       const right = radial.getRight();
       const factorySize = radius / 4 * 0.7;
+
+      if (part instanceof FreeIndustry) {
+        ctx.strokeStyle = planet.getOwner() === Owner.None ? '#3a3a3a' : '#555';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.arc(factoryCenter.x, factoryCenter.y, factorySize, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+      }
+
       const symbol = part instanceof IndustryConstruction ? part.getFactory() : part;
       this.drawShipSymbol(ctx, factoryCenter, factorySize, symbol, '#555', radial, right, !(part instanceof IndustryConstruction));
       const progressBarCenter = {
@@ -160,6 +184,46 @@ export class Renderer {
         y: factoryCenter.y + radial.y * factorySize * 2.2,
       };
       this.drawProgressBar(ctx, progressBarCenter, factorySize, part.getProgress());
+
+      if (focus === planet && this.selectedIndustryIndex === index) {
+        ctx.strokeStyle = '#fff4a3';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(factoryCenter.x, factoryCenter.y, factorySize * 1.6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+    this.drawInventory(ctx, planet, center, radius);
+  }
+
+  private drawInventory(
+    ctx: CanvasRenderingContext2D,
+    planet: Planet,
+    center: { x: number; y: number },
+    radius: number,
+  ) {
+    if (planet.getOwner() === Owner.None) return;
+    const inv = planet.inventory;
+    const resources = [
+      { value: inv.unminedOre, color: '#8a5a2a' },
+      { value: inv.minedOre, color: '#c08040' },
+      { value: inv.material, color: '#f0d060' },
+      { value: inv.energy, color: '#60d0f0' },
+    ];
+    const maxValue = 100;
+    const diskRadius = radius / 2;
+    const barArea = diskRadius * 1.2;
+    const gap = 1;
+    const barWidth = (barArea - gap * (resources.length - 1)) / resources.length;
+    const left0 = center.x - barArea / 2;
+    const top0 = center.y - barArea / 2;
+    resources.forEach((resource, index) => {
+      const x = left0 + index * (barWidth + gap);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(x, top0, barWidth, barArea);
+      const fillHeight = barArea * (resource.value / maxValue);
+      ctx.fillStyle = resource.color;
+      ctx.fillRect(x, top0 + barArea - fillHeight, barWidth, fillHeight);
     });
   }
   private drawProgressBar(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number, progress: number) {
@@ -200,6 +264,43 @@ export class Renderer {
     filled = true,
   ) {
     ctx.fillStyle = color;
+    if (ship instanceof Extractor) {
+      ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
+      return;
+    }
+    if (ship instanceof Refinery) {
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y - size);
+      ctx.lineTo(center.x + size, center.y);
+      ctx.lineTo(center.x, center.y + size);
+      ctx.lineTo(center.x - size, center.y);
+      ctx.closePath();
+      if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
+      return;
+    }
+    if (ship instanceof Collector) {
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, size, 0, Math.PI * 2);
+      if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, size * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (ship instanceof FreightShip) {
+      const front = { x: center.x + direction.x * size, y: center.y + direction.y * size };
+      const back = { x: center.x - direction.x * size, y: center.y - direction.y * size };
+      const halfWidth = size * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(front.x + right.x * halfWidth, front.y + right.y * halfWidth);
+      ctx.lineTo(front.x - right.x * halfWidth, front.y - right.y * halfWidth);
+      ctx.lineTo(back.x - right.x * halfWidth, back.y - right.y * halfWidth);
+      ctx.lineTo(back.x + right.x * halfWidth, back.y + right.y * halfWidth);
+      ctx.closePath();
+      if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
+      return;
+    }
     if (ship instanceof Colonizer) {
       const frontRadius = size;
       const rearRadius = size * .75;
@@ -292,6 +393,19 @@ export class Renderer {
       const centerX = visualPosition.x;
       const centerY = visualPosition.y;
       if (Math.hypot(point.x - centerX, point.y - centerY) <= visualRadius) return planet;
+    }
+    return undefined;
+  }
+  getIndustryAt(point: { x: number; y: number }) {
+    for (const planet of this.game.space.planets) {
+      for (let index = 0; index < planet.parts.length; index += 1) {
+        if (planet.parts[index] instanceof FreeIndustry) continue;
+        const position = this.camera.modelToView(planet.getIndustryPosition(index));
+        const size = this.camera.radius(planet.radius) / 4 * 0.7;
+        if (Math.hypot(point.x - position.x, point.y - position.y) <= size * 1.8) {
+          return { planet, index };
+        }
+      }
     }
     return undefined;
   }

@@ -1,14 +1,16 @@
+import { GameConstants } from '../game-constants.ts';
 import { Planet } from './planet.ts';
 import { Position } from './position.ts';
 import { Ship } from './ship.ts';
 import { Industry } from './industry.ts';
 
 export abstract class ShippingIndustry extends Industry {
-  protected timeToCompletion = 3;
-  protected productionDuration = 3;
+  protected timeToCompletion = GameConstants.ShippingIndustry.DefaultProductionDuration;
+  protected productionDuration = GameConstants.ShippingIndustry.DefaultProductionDuration;
   private currentShip?: Ship;
 
   constructor(protected allies: Ship[]) { super(); }
+  getMaterialCost() { return 0; }
   update(dt: number, position: Position, launchPosition: Position, home: Planet) {
     if (!this.currentShip || !this.currentShip.isAlive()) {
       this.timeToCompletion -= dt;

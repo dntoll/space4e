@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="sv">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -7,18 +7,14 @@
     <title>Space</title>
   </head>
   <body>
-    <main id="app" aria-label="Space-spel">
+    <main id="app">
       <canvas id="game" tabindex="0"></canvas>
-      <section class="time-controls" aria-label="Tidskontroll">
-        <button data-command="pause">Paus (SPACE)</button>
-        <button data-command="slow">›</button>
-        <button data-command="normal">››</button>
+      <section id="info-panel"></section>
+      <section class="time-controls">
+        <button data-command="pause"></button>
+        <button data-command="slow"></button>
+        <button data-command="normal"></button>
       </section>
-      <div class="controls" aria-label="Byggkontroller">
-        <button data-command="colonizer">Bygg kolonisationsskepp (C)</button>
-        <button data-command="hunter">Bygg jaktfartyg (H)</button>
-        <button data-command="bomber">Bygg bombfartyg (B)</button>
-      </div>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

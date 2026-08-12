@@ -1,19 +1,23 @@
+import { GameConstants } from '../game-constants.ts';
+import { Position } from './position.ts';
 import { Ship, ShotEffect } from './ship.ts';
 
 export class Colonizer extends Ship {
-
-
+  constructor(center: Position, private readonly allies: Ship[] = []) { super(center); }
 
   updateBehavior(dt: number): ShotEffect | undefined {
 
-    if (!this.isAlive() || !this.home) 
+    if (!this.isAlive() || !this.home)
+      return undefined;
+
+    if (this.returningForFuel)
       return undefined;
 
     if (this.launching)
       return undefined;
-    
+
     const targetPlanet = this.home.getTargetPlanet();
-    
+
     const targetBelongsToAnotherOwner = targetPlanet.getOwner() !== this.home.getOwner();
 
 
@@ -30,9 +34,11 @@ export class Colonizer extends Ship {
         this.speed = 0;
 
         if (!targetPlanet.hasFactories()) {
-          targetPlanet.setOwner(this.home.getOwner());
+          const owner = this.home.getOwner();
+          targetPlanet.setOwner(owner);
           targetPlanet.destroyConstructions();
-          targetPlanet.setTarget(targetPlanet, this.home.getOwner());
+          targetPlanet.setTarget(targetPlanet, owner);
+          targetPlanet.placeSpaceport(this.allies, owner);
           this.kill();
         }
       } else {
@@ -46,16 +52,16 @@ export class Colonizer extends Ship {
         return undefined;
       }
     } else {
-      const withinOrbitRange = this.center.distanceTo(targetPlanet.centerPosition) <= targetPlanet.radius * 1.1;
+      const withinOrbitRange = this.center.distanceTo(targetPlanet.centerPosition) <= targetPlanet.radius * GameConstants.Ship.OrbitRadiusMultiplier;
       if (this.isOrbitingAround(targetPlanet.centerPosition) || withinOrbitRange) {
-        this.orbitAround(targetPlanet.centerPosition, targetPlanet.radius * 1.1);
+        this.orbitAroundPlanet(targetPlanet, targetPlanet.radius * GameConstants.Ship.OrbitRadiusMultiplier);
       } else {
-        this.goToTargetPlanet(); return undefined; 
+        this.goToTargetPlanet(); return undefined;
       }
 
     }
-    
-    
+
+
 
     return undefined;
   }

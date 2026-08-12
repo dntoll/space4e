@@ -1,26 +1,28 @@
+import { GameConstants } from '../game-constants.ts';
 import { Owner, RandomSource } from './owner.ts';
 import { Planet } from './planet.ts';
 import { Position } from './position.ts';
 
 export class Space {
-  static readonly NUM_PLANETS = 20;
-  static readonly SPACE_RADIUS = 0.5;
   readonly planets: Planet[];
   constructor(random: RandomSource = Math.random) {
     this.planets = this.createSpace(random);
   }
 
   private createSpace(random: RandomSource) {
-    const ret = new Array();
+    const ret = new Array<Planet>();
     let indexOfTopPlanet = 0;
-    let yPosOfTopPlanet =  -Space.SPACE_RADIUS * 0.75;
+    let yPosOfTopPlanet = -GameConstants.Space.SpaceRadius * 0.75;
     let indexOfBottomPlanet = 1;
-    let yPosOfBottomPlanet = Space.SPACE_RADIUS * 0.75;
+    let yPosOfBottomPlanet = GameConstants.Space.SpaceRadius * 0.75;
 
-    while (ret.length < Space.NUM_PLANETS) {
-      const position = new Position(random() * Space.SPACE_RADIUS * 2 - Space.SPACE_RADIUS, random() * Space.SPACE_RADIUS * 2 - Space.SPACE_RADIUS);
+    while (ret.length < GameConstants.Space.NumPlanets) {
+      const position = new Position(
+        random() * GameConstants.Space.SpaceRadius * 2 - GameConstants.Space.SpaceRadius,
+        random() * GameConstants.Space.SpaceRadius * 2 - GameConstants.Space.SpaceRadius,
+      );
 
-      if (ret.some((planet) => planet.centerPosition.distanceTo(position) < 0.1)) {
+      if (ret.some((planet) => planet.centerPosition.distanceTo(position) < GameConstants.Space.MinPlanetSpacing)) {
         continue;
       }
       if (position.y < yPosOfTopPlanet) {
@@ -32,13 +34,30 @@ export class Space {
         indexOfBottomPlanet = ret.length;
       }
 
-      ret.push(new Planet(position, random() * .02 + .02));
+      const slotCount = Math.floor(random() * (GameConstants.Planet.MaxSlots - GameConstants.Planet.MinSlots + 1)) + GameConstants.Planet.MinSlots;
+      const planet = new Planet(position, random() * GameConstants.Space.PlanetRadiusVariance + GameConstants.Space.MinPlanetRadius, slotCount);
+      planet.inventory.unminedOre = GameConstants.Space.UnminedOreMin + random() * GameConstants.Space.UnminedOreRange;
+      planet.inventory.collectionPotential = GameConstants.Space.CollectionPotentialMin + random() * GameConstants.Space.CollectionPotentialRange;
+      ret.push(planet);
     }
 
-    ret[indexOfTopPlanet].setOwner(Owner.Player);
-    ret[indexOfBottomPlanet].setOwner(Owner.Computer);
+    const playerPlanet = ret[indexOfTopPlanet];
+    playerPlanet.setOwner(Owner.Player);
+    this.seedStartingPlanet(playerPlanet);
 
-    return ret
+    const computerPlanet = ret[indexOfBottomPlanet];
+    computerPlanet.setOwner(Owner.Computer);
+    this.seedStartingPlanet(computerPlanet);
+
+    return ret;
+  }
+
+  private seedStartingPlanet(planet: Planet) {
+    planet.expandSlotsTo(GameConstants.Planet.StartingSlots);
+    planet.inventory.material = GameConstants.StartingPlanet.Material;
+    planet.inventory.energy = GameConstants.StartingPlanet.Energy;
+    planet.inventory.unminedOre = GameConstants.StartingPlanet.UnminedOre;
+    planet.inventory.collectionPotential = GameConstants.StartingPlanet.CollectionPotential;
   }
 
   getPlanet(index: number) { return this.planets[index]; }

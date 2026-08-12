@@ -1,3 +1,4 @@
+import { GameConstants } from '../game-constants.ts';
 import type { Planet } from './planet.ts';
 import { Direction } from './direction.ts';
 import { Position } from './position.ts';
@@ -11,15 +12,19 @@ export type ShotEffect = {
 };
 
 export abstract class Ship {
-  private static readonly ORBIT_REFERENCE_RADIUS = .05;
-  private static readonly ORBIT_REFERENCE_SPEED = .04;
   protected forward = new Direction(1, 0);
   protected turnTo = new Direction(0, 1);
   protected goalSpeed = 0;
   protected speed = 0;
   protected shotCooldown = 0;
   protected home?: Planet;
-  protected get turnSpeedDegrees() { return 30; }
+  protected energy = GameConstants.Ship.MaxEnergy;
+  protected readonly maxEnergy = GameConstants.Ship.MaxEnergy;
+  protected lastSpaceport?: Planet;
+  protected returningForFuel = false;
+  protected missionTargetPlanet?: Planet;
+  protected orbitPlanet?: Planet;
+  protected get turnSpeedDegrees() { return GameConstants.Ship.TurnSpeedDegrees; }
   private alive = true;
   private aimTarget?: Position;
   private avoidedPlanet?: Planet;
@@ -36,8 +41,44 @@ export abstract class Ship {
   constructor(public center: Position) { this.center = new Position(center.x, center.y); }
   setHome(home: Planet) { this.home = home; }
   updateBehavior(_dt: number, _friends: Ship[], _opponents: Ship[]): ShotEffect | undefined { return undefined; }
+  isReturningForFuel() { return this.returningForFuel; }
+  getEnergy() { return this.energy; }
+  canReach(target: Position) { return this.energy >= this.travelCostTo(target) - 0.0001; }
+  protected travelCostTo(target: Position) { return GameConstants.Ship.TravelCostPerDistance * this.center.distanceTo(target); }
+  protected tryRefuel(planet: Planet) {
+    if (!planet.hasSpaceport()) return;
+    this.lastSpaceport = planet;
+    const needed = this.maxEnergy - this.energy;
+    if (needed <= 0.0001) return;
+    this.energy += planet.inventory.takeEnergy(needed);
+  }
+  protected orbitAroundPlanet(planet: Planet, orbitRadius: number) {
+    this.orbitAround(planet.centerPosition, orbitRadius);
+    this.orbitPlanet = planet;
+  }
+  protected travelTowardPlanet(target: Planet) {
+    this.missionTargetPlanet = target;
+    if (this.returningForFuel) return;
+    const close = this.center.distanceTo(target.centerPosition) <= target.radius * GameConstants.Ship.CloseOrbitThresholdMultiplier;
+    if (this.isOrbitingAround(target.centerPosition) || close) {
+      this.orbitAroundPlanet(target, target.radius * GameConstants.Ship.OrbitRadiusMultiplier);
+      return;
+    }
+    if (!this.canReach(target.centerPosition)) {
+      if (this.lastSpaceport && this.center.distanceTo(this.lastSpaceport.centerPosition) <= this.lastSpaceport.radius * GameConstants.Ship.CloseOrbitThresholdMultiplier) {
+        this.orbitAroundPlanet(this.lastSpaceport, this.lastSpaceport.radius * GameConstants.Ship.OrbitRadiusMultiplier);
+        return;
+      }
+      if (this.lastSpaceport) {
+        this.returningForFuel = true;
+        return;
+      }
+    }
+    this.setAimDirection(target.centerPosition);
+  }
   setAimDirection(target: Position, goalSpeed?: number) {
     this.orbitCenter = undefined;
+    this.orbitPlanet = undefined;
     this.aimTarget = new Position(target.x, target.y);
     const distance = this.center.distanceTo(target);
     if (distance > 0) {
@@ -46,7 +87,7 @@ export abstract class Ship {
     this.goalSpeed = Math.max(0, goalSpeed ?? distance);
   }
   avoidPlanets(planets: Planet[]) {
-    if (this.launching || this.isOrbiting() || !this.aimTarget) {
+    if (this.returningForFuel || this.launching || this.isOrbiting() || !this.aimTarget) {
       this.avoidedPlanet = undefined;
       return;
     }
@@ -130,6 +171,8 @@ export abstract class Ship {
   }
   launchFrom(home: Planet, launchPosition: Position) {
     this.launching = true;
+    this.lastSpaceport = home;
+    this.energy = this.maxEnergy;
     this.launchCenter = new Position(home.centerPosition.x, home.centerPosition.y);
     this.launchAltitude = home.centerPosition.distanceTo(launchPosition);
     this.setAimDirection(launchPosition);
@@ -138,6 +181,7 @@ export abstract class Ship {
     }
   }
   orbitAround(center: Position, orbitRadius: number) {
+    this.orbitPlanet = undefined;
     if (!this.isOrbitingAround(center)) {
       this.orbitAngle = Math.atan2(this.center.y - center.y, this.center.x - center.x);
       this.orbitCenter = new Position(center.x, center.y);
@@ -196,19 +240,27 @@ export abstract class Ship {
   }
 
   protected goToTargetPlanet() {
-    if (!this.home) 
+    if (!this.home)
       return;
-    
+
     //should not orbit here, orbiting is handled in updateBehavior of Subclasses
-    const target = this.home.getTargetPlanet();
-    this.setAimDirection(target.centerPosition);
-   
+    this.travelTowardPlanet(this.home.getTargetPlanet());
   }
   update(dt: number) {
     if (!this.alive) return;
 
     if (this.launching && this.launchCenter && this.center.distanceTo(this.launchCenter) >= this.launchAltitude) {
       this.launching = false;
+    }
+
+    if (this.returningForFuel && this.lastSpaceport) {
+      const port = this.lastSpaceport;
+      const close = this.center.distanceTo(port.centerPosition) <= port.radius * GameConstants.Ship.CloseOrbitThresholdMultiplier;
+      if (this.isOrbitingAround(port.centerPosition) || close) {
+        if (!this.isOrbiting()) this.orbitAroundPlanet(port, port.radius * GameConstants.Ship.OrbitRadiusMultiplier);
+      } else {
+        this.setAimDirection(port.centerPosition);
+      }
     }
 
     const orbitCenter = this.orbitCenter;
@@ -253,11 +305,17 @@ export abstract class Ship {
         this.forward = new Direction(movementX, movementY);
       }
 
+      if (this.orbitPlanet && this.orbitPlanet.hasSpaceport()) this.tryRefuel(this.orbitPlanet);
+      if (this.returningForFuel && this.missionTargetPlanet && this.canReach(this.missionTargetPlanet.centerPosition)) {
+        this.returningForFuel = false;
+      }
+
       return;
     }
 
     this.center.x += this.forward.x * dt * this.speed;
     this.center.y += this.forward.y * dt * this.speed;
+    this.energy = Math.max(0, this.energy - GameConstants.Ship.TravelCostPerDistance * this.speed * dt);
     const movingAwayFromTarget = this.forward.x * this.turnTo.x + this.forward.y * this.turnTo.y < 0;
     const turnRadians = dt * this.turnSpeedDegrees * Math.PI / 180;
     const facingTarget = this.forward.turnTowards(this.turnTo, turnRadians);
@@ -270,14 +328,14 @@ export abstract class Ship {
     }
   }
   get direction() { return this.forward; }
-  get radius() { return .003; }
-  get weaponRange() { return .05; }
+  get radius() { return GameConstants.Ship.Radius; }
+  get weaponRange() { return GameConstants.Ship.WeaponRange; }
   get shipSpeed() { return this.speed; }
   isAlive() { return this.alive; }
   kill() { this.alive = false; }
   isTooClose(other: Ship | Position, radius = other instanceof Ship ? other.radius : 0) { return this.center.distanceTo(other instanceof Ship ? other.center : other) < this.radius + radius; }
   private getOrbitSpeed(radius: number) {
     const safeRadius = Math.max(this.radius, radius);
-    return Ship.ORBIT_REFERENCE_SPEED * Math.sqrt(Ship.ORBIT_REFERENCE_RADIUS / safeRadius);
+    return GameConstants.Ship.OrbitReferenceSpeed * Math.sqrt(GameConstants.Ship.OrbitReferenceRadius / safeRadius);
   }
 }
