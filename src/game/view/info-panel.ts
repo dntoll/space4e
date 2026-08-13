@@ -1,34 +1,16 @@
-import {
-  BomberIndustry,
-  Collector,
-  ColonizerIndustry,
-  Extractor,
-  FreeIndustry,
-  HunterIndustry,
-  Industry,
-  IndustryConstruction,
-  IndustryOrder,
-  Owner,
-  Planet,
-  PlanetaryDefenseGun,
-  Refinery,
-  Spaceport,
-} from '../model/index.ts';
+import { FreeIndustry, Industry, Owner, Planet, Ship } from '../model/index.ts';
 import { GameConstants } from '../game-constants.ts';
 import { ViewStrings } from './view-strings.ts';
-
-export type BuildOption = {
-  command: string;
-  label: string;
-  cost: number;
-  enabled: boolean;
-};
+import { Renderer } from './renderer.ts';
+import { industryInfo, industrySymbol, sellRefund, shipName } from './industry-display.ts';
+import { ownerBadgeColor } from './owner-colors.ts';
 
 export class InfoPanel {
   private readonly root: HTMLElement;
   private sized = false;
   constructor(
-    private readonly onBuild: (command: string) => void,
+    private readonly renderer: Renderer,
+    private readonly onPickSlot: (index: number, anchor: { x: number; y: number }) => void,
     private readonly onSell: (index: number) => void,
     private readonly onRemoveTarget: () => void,
   ) {
@@ -38,12 +20,13 @@ export class InfoPanel {
     this.root.addEventListener('pointerdown', (event) => this.handleClick(event));
   }
 
-  update(planet?: Planet, buildOptions?: BuildOption[]) {
+  update(planet?: Planet, ships: Ship[] = []) {
     if (!planet) {
       this.root.innerHTML = '';
       return;
     }
-    this.root.innerHTML = this.render(planet, buildOptions);
+    this.root.innerHTML = this.render(planet, ships);
+    this.drawSprites(planet);
     this.ensureSize();
   }
 
@@ -52,7 +35,6 @@ export class InfoPanel {
     this.sized = true;
     const maxCost = Math.max(
       GameConstants.Extractor.MaterialCost,
-      GameConstants.Refinery.MaterialCost,
       GameConstants.Collector.MaterialCost,
       GameConstants.ColonizerIndustry.MaterialCost,
       GameConstants.HunterIndustry.MaterialCost,
@@ -63,7 +45,6 @@ export class InfoPanel {
     const names = [
       ViewStrings.InfoPanel.freeSlot,
       ViewStrings.InfoPanel.extractor,
-      ViewStrings.InfoPanel.refinery,
       ViewStrings.InfoPanel.collector,
       ViewStrings.InfoPanel.colonizerFactory,
       ViewStrings.InfoPanel.hunterFactory,
@@ -82,21 +63,12 @@ export class InfoPanel {
       ViewStrings.InfoPanel.active,
       ViewStrings.InfoPanel.missing,
     ];
-    const buildLabels = [
-      ViewStrings.Buttons.extractor,
-      ViewStrings.Buttons.refinery,
-      ViewStrings.Buttons.collector,
-      ViewStrings.Buttons.colonizer,
-      ViewStrings.Buttons.hunter,
-      ViewStrings.Buttons.bomber,
-      ViewStrings.Buttons.defense,
-    ].map((label) => label + ViewStrings.Labels.materialSuffix(maxCost));
     const sellLabels = [ViewStrings.Labels.sell(0), ViewStrings.Labels.sell(maxRefund)];
     const others = [
       ViewStrings.InfoPanel.title,
       ViewStrings.InfoPanel.resources,
       ViewStrings.InfoPanel.industries,
-      ViewStrings.InfoPanel.build,
+      ViewStrings.InfoPanel.fleet,
       ViewStrings.InfoPanel.removeTarget,
       ViewStrings.InfoPanel.ownerNone,
       ViewStrings.InfoPanel.ownerComputer,
@@ -112,8 +84,9 @@ export class InfoPanel {
       measurer.textContent = text;
       return Math.max(max, measurer.getBoundingClientRect().width);
     }, 0);
-    const industryRow = widest(names) + widest(states) + widest(sellLabels);
-    const content = Math.max(industryRow, widest(buildLabels), widest(others));
+    const spriteColumn = 20;
+    const industryRow = widest(names) + widest(states) + widest(sellLabels) + spriteColumn;
+    const content = Math.max(industryRow, widest(others));
     measurer.remove();
 
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -128,9 +101,10 @@ export class InfoPanel {
 
   private handleClick(event: MouseEvent) {
     const target = event.target as HTMLElement;
-    const buildButton = target.closest<HTMLElement>('[data-build]');
-    if (buildButton) {
-      this.onBuild(buildButton.dataset.build as string);
+    const slotRow = target.closest<HTMLElement>('[data-slot-index]');
+    if (slotRow) {
+      const rect = slotRow.getBoundingClientRect();
+      this.onPickSlot(Number(slotRow.dataset.slotIndex), { x: rect.right, y: rect.top + rect.height / 2 });
       return;
     }
     const sellButton = target.closest<HTMLElement>('[data-sell-index]');
@@ -144,21 +118,21 @@ export class InfoPanel {
     }
   }
 
-  private render(planet: Planet, buildOptions?: BuildOption[]): string {
+  private render(planet: Planet, ships: Ship[]): string {
     const inv = planet.inventory;
     const maxValue = GameConstants.Inventory.Capacity;
     const resources = [
       { label: ViewStrings.InfoPanel.unminedOre, value: inv.unminedOre, color: '#8a5a2a' },
-      { label: ViewStrings.InfoPanel.minedOre, value: inv.minedOre, color: '#c08040' },
       { label: ViewStrings.InfoPanel.material, value: inv.material, color: '#f0d060' },
       { label: ViewStrings.InfoPanel.energy, value: inv.energy, color: '#60d0f0' },
     ];
 
     const ownerName = this.ownerName(planet.getOwner());
-    const ownerColor = this.ownerColor(planet.getOwner());
+    const ownerColor = ownerBadgeColor(planet.getOwner());
     const canManage = planet.getOwner() === Owner.Player;
     const hasTarget = planet.getTarget() !== planet;
-    const removeTargetButton = canManage && hasTarget
+    const hasFutureTarget = planet.getPlayerFutureTarget() !== undefined;
+    const removeTargetButton = (canManage && hasTarget) || (!canManage && hasFutureTarget)
       ? `<button class="remove-target-button" data-remove-target>${ViewStrings.InfoPanel.removeTarget}</button>`
       : '';
 
@@ -167,11 +141,9 @@ export class InfoPanel {
       .join('');
     const spaceport = planet.hasSpaceport() && planet.getSpaceport()
       ? this.renderIndustry(planet.getSpaceport()!, undefined, false)
-      : `<div class="info-industry"><span class="info-industry-name">${ViewStrings.InfoPanel.spaceport}</span><span class="info-industry-state">${ViewStrings.InfoPanel.missing}</span></div>`;
+      : `<div class="info-industry"><canvas class="info-industry-sprite" width="20" height="20"></canvas><span class="info-industry-name">${ViewStrings.InfoPanel.spaceport}</span><span class="info-industry-state">${ViewStrings.InfoPanel.missing}</span></div>`;
 
-    const buildPanel = canManage && buildOptions
-      ? `<h3>${ViewStrings.InfoPanel.build}</h3><div class="build-panel">${buildOptions.map((o) => this.renderBuildButton(o)).join('')}</div>`
-      : '';
+    const fleetRows = this.renderFleet(planet, ships);
 
     return `
       <h2>${ViewStrings.InfoPanel.title}</h2>
@@ -182,8 +154,22 @@ export class InfoPanel {
       <h3>${ViewStrings.InfoPanel.industries}</h3>
       ${slots}
       ${spaceport}
-      ${buildPanel}
+      ${fleetRows}
     `;
+  }
+
+  private renderFleet(planet: Planet, ships: Ship[]): string {
+    const orbiting = ships.filter((ship) => ship.isAlive() && ship.isOrbitingAround(planet.centerPosition));
+    if (orbiting.length === 0) return '';
+    const counts = new Map<string, number>();
+    for (const ship of orbiting) {
+      const name = shipName(ship);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    const rows = [...counts.entries()]
+      .map(([name, count]) => `<div class="info-fleet-row"><span class="info-fleet-name">${name}</span><span class="info-fleet-count">${count}</span></div>`)
+      .join('');
+    return `<h3>${ViewStrings.InfoPanel.fleet}</h3>${rows}`;
   }
 
   private renderResource(label: string, value: number, max: number, color: string): string {
@@ -197,75 +183,41 @@ export class InfoPanel {
   }
 
   private renderIndustry(industry: Industry, index: number | undefined, canSell: boolean): string {
-    const info = this.industryInfo(industry);
-    const sellButton = canSell && index !== undefined && !(industry instanceof FreeIndustry)
-      ? `<button class="sell-button" data-sell-index="${index}">${ViewStrings.Labels.sell(this.sellRefund(industry))}</button>`
+    const info = industryInfo(industry);
+    const isFree = industry instanceof FreeIndustry;
+    const canPick = canSell && isFree && index !== undefined;
+    const spriteAttr = index !== undefined ? `data-sprite-index="${index}"` : 'data-sprite-spaceport';
+    const clickable = canPick ? `data-slot-index="${index}"` : '';
+    const rowClass = canPick ? 'info-industry info-industry-free' : 'info-industry';
+    const sellButton = canSell && index !== undefined && !isFree
+      ? `<button class="sell-button" data-sell-index="${index}">${ViewStrings.Labels.sell(sellRefund(industry))}</button>`
       : '';
     return `
-      <div class="info-industry">
+      <div class="${rowClass}" ${clickable}>
+        <canvas class="info-industry-sprite" ${spriteAttr} width="20" height="20"></canvas>
         <span class="info-industry-name">${info.name}</span>
         <span class="info-industry-state">${info.state}</span>
         ${sellButton}
       </div>`;
   }
 
-  private renderBuildButton(option: BuildOption): string {
-    const disabled = option.enabled ? '' : 'disabled';
-    return `<button class="build-button" data-build="${option.command}" ${disabled}>${option.label}${ViewStrings.Labels.materialSuffix(option.cost)}</button>`;
-  }
-
-  private sellRefund(industry: Industry): number {
-    if (industry instanceof IndustryOrder) return 0;
-    const cost = industry instanceof IndustryConstruction
-      ? industry.getFactory().getMaterialCost()
-      : industry.getMaterialCost();
-    return Math.floor(cost / 2);
-  }
-
-  private industryInfo(industry: Industry): { name: string; state: string } {
-    if (industry instanceof FreeIndustry) {
-      return { name: ViewStrings.InfoPanel.freeSlot, state: ViewStrings.InfoPanel.free };
-    }
-    if (industry instanceof IndustryOrder) {
-      return { name: this.industryName(industry.getFactory()), state: ViewStrings.InfoPanel.waiting };
-    }
-    if (industry instanceof IndustryConstruction) {
-      const progress = Math.round(industry.getProgress() * 100);
-      return { name: this.industryName(industry.getFactory()), state: ViewStrings.InfoPanel.building(progress) };
-    }
-    const progress = Math.round(industry.getProgress() * 100);
-    const name = this.industryName(industry);
-    if (industry instanceof Extractor || industry instanceof Refinery || industry instanceof Collector) {
-      return { name, state: ViewStrings.InfoPanel.producing(progress) };
-    }
-    if (industry instanceof PlanetaryDefenseGun) {
-      return { name, state: ViewStrings.InfoPanel.active };
-    }
-    if (progress >= 100) return { name, state: ViewStrings.InfoPanel.shipReady };
-    return { name, state: ViewStrings.InfoPanel.buildingShip(progress) };
-  }
-
-  private industryName(industry: Industry): string {
-    if (industry instanceof Extractor) return ViewStrings.InfoPanel.extractor;
-    if (industry instanceof Refinery) return ViewStrings.InfoPanel.refinery;
-    if (industry instanceof Collector) return ViewStrings.InfoPanel.collector;
-    if (industry instanceof ColonizerIndustry) return ViewStrings.InfoPanel.colonizerFactory;
-    if (industry instanceof HunterIndustry) return ViewStrings.InfoPanel.hunterFactory;
-    if (industry instanceof BomberIndustry) return ViewStrings.InfoPanel.bomberFactory;
-    if (industry instanceof PlanetaryDefenseGun) return ViewStrings.InfoPanel.planetaryDefenseGun;
-    if (industry instanceof Spaceport) return ViewStrings.InfoPanel.spaceport;
-    return ViewStrings.InfoPanel.unknown;
+  private drawSprites(planet: Planet) {
+    this.root.querySelectorAll<HTMLCanvasElement>('.info-industry-sprite').forEach((canvas) => {
+      const indexAttr = canvas.dataset.spriteIndex;
+      if (indexAttr !== undefined) {
+        const part = planet.parts[Number(indexAttr)];
+        if (part instanceof FreeIndustry) this.renderer.drawFreeSlotIcon(canvas);
+        else this.renderer.drawIndustryIcon(canvas, industrySymbol(part));
+      } else if (canvas.hasAttribute('data-sprite-spaceport')) {
+        const spaceport = planet.getSpaceport();
+        if (spaceport) this.renderer.drawIndustryIcon(canvas, spaceport);
+      }
+    });
   }
 
   private ownerName(owner: Owner): string {
     if (owner === Owner.Player) return ViewStrings.InfoPanel.ownerPlayer;
     if (owner === Owner.Computer) return ViewStrings.InfoPanel.ownerComputer;
     return ViewStrings.InfoPanel.ownerNone;
-  }
-
-  private ownerColor(owner: Owner): string {
-    if (owner === Owner.Player) return '#7a3030';
-    if (owner === Owner.Computer) return '#307a30';
-    return '#404040';
   }
 }

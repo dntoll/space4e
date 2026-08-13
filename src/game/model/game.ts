@@ -1,11 +1,11 @@
 import { ColonizerIndustry } from './colonizer-industry.ts';
 import { Collector } from './collector.ts';
+import { GameConstants } from '../game-constants.ts';
 import { Extractor } from './extractor.ts';
 import { IndustryConstruction } from './industry.ts';
 import { Owner, RandomSource } from './owner.ts';
 import { Planet } from './planet.ts';
 import { PlanetaryDefenseGun } from './planetary-defense-gun.ts';
-import { Refinery } from './refinery.ts';
 import { Ship, ShotEffect } from './ship.ts';
 import { Space } from './space.ts';
 
@@ -14,8 +14,10 @@ export class Game {
   readonly playerShips: Ship[] = [];
   readonly computerShips: Ship[] = [];
   readonly shotEffects: ShotEffect[] = [];
+  private readonly random: RandomSource;
 
   constructor(random?: RandomSource) {
+    this.random = random ?? Math.random;
     this.space = new Space(random);
     this.space.getPlanetsThatBelongTo(Owner.Player).forEach((planet) => {
       planet.placeSpaceport(this.playerShips, Owner.Player);
@@ -29,9 +31,8 @@ export class Game {
 
   private seedStartingIndustry(planet: Planet, ships: Ship[]) {
     planet.parts[0] = new Extractor();
-    planet.parts[1] = new Refinery();
-    planet.parts[2] = new Collector();
-    planet.parts[3] = new ColonizerIndustry(ships);
+    planet.parts[1] = new Collector();
+    planet.parts[2] = new ColonizerIndustry(ships);
   }
 
   update(dt: number) {
@@ -49,9 +50,11 @@ export class Game {
     this.space.update(dt);
     this.firePlanetaryDefenseGuns();
     const uncontested = this.space.getPlanetsThatBelongTo(Owner.None);
+    const maxJump = GameConstants.Ship.MaxEnergy / GameConstants.Ship.TravelCostPerDistance;
     this.space.getPlanetsThatBelongTo(Owner.Computer).forEach((planet) => {
-      if ((planet.getTarget() === planet || planet.getTarget().hasFactories()) && uncontested.length) {
-        planet.setTarget(uncontested[Math.floor(Math.random() * uncontested.length)], Owner.Computer);
+      if (planet.getTarget() === planet || planet.getTarget().hasFactories()) {
+        const reachable = uncontested.filter((target) => planet.centerPosition.distanceTo(target.centerPosition) <= maxJump);
+        if (reachable.length) planet.setTarget(reachable[Math.floor(this.random() * reachable.length)], Owner.Computer);
       }
       this.buildComputerEconomy(planet);
     });
@@ -77,15 +80,17 @@ export class Game {
 
     const steps: Array<[boolean, () => void]> = [
       [!hasType(Extractor), () => planet.buildIndustry(new Extractor(), Owner.Computer)],
-      [!hasType(Refinery), () => planet.buildIndustry(new Refinery(), Owner.Computer)],
       [!hasType(Collector), () => planet.buildIndustry(new Collector(), Owner.Computer)],
       [!hasType(ColonizerIndustry), () => planet.buildIndustry(new ColonizerIndustry(this.computerShips), Owner.Computer)],
-      [!hasType(PlanetaryDefenseGun), () => planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer)],
     ];
 
     for (const [needed, build] of steps) {
       if (!needed) continue;
       try { build(); return; } catch { /* not enough material or no free slot */ }
+    }
+
+    if (this.random() < GameConstants.Computer.PdcBuildChance) {
+      try { planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer); } catch { /* no free slot */ }
     }
   }
 }

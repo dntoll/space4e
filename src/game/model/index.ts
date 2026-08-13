@@ -16,7 +16,6 @@ export { BomberIndustry } from './bomber-industry.ts';
 export { HunterIndustry } from './hunter-industry.ts';
 export { ColonizerIndustry } from './colonizer-industry.ts';
 export { Extractor } from './extractor.ts';
-export { Refinery } from './refinery.ts';
 export { Collector } from './collector.ts';
 export { Spaceport } from './spaceport.ts';
 export { PlanetaryDefenseGun } from './planetary-defense-gun.ts';

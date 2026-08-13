@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameConstants } from '../game-constants.ts';
-import { Bomber, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, IndustryConstruction, IndustryOrder, Owner, Planet, PlanetInventory, PlanetaryDefenseGun, Position, Refinery, Ship, Space, Spaceport } from './index.ts';
+import { Bomber, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, IndustryConstruction, IndustryOrder, Owner, Planet, PlanetInventory, PlanetaryDefenseGun, Position, Ship, Space, Spaceport } from './index.ts';
 
 describe('model geometry', () => {
   it('normalizes directions and turns the shortest way', () => {
@@ -77,7 +77,7 @@ describe('game world', () => {
     expect(space.getPlanetsThatBelongTo(Owner.Computer)).toHaveLength(1);
   });
   it('prevents building on a full planet', () => {
-    const planet = new Planet(new Position(0, 0), .1);
+    const planet = new Planet(new Position(0, 0), GameConstants.Space.MinPlanetRadius);
     planet.setOwner(Owner.Player);
     planet.inventory.material = 100;
     expect(() => planet.buildIndustry(new Extractor(), Owner.Player)).not.toThrow();
@@ -164,7 +164,7 @@ describe('game world', () => {
     target.setOwner(Owner.Computer);
     target.inventory.material = 10;
     target.buildIndustry(new Extractor(), Owner.Computer);
-    target.buildIndustry(new Refinery(), Owner.Computer);
+    target.buildIndustry(new Collector(), Owner.Computer);
     target.update(2.1);
     expect(target.hasFactories()).toBe(true);
 
@@ -316,12 +316,10 @@ describe('economy and energy', () => {
   it('handles the planet inventory', () => {
     const inv = new PlanetInventory();
     inv.unminedOre = 10;
-    inv.mine(3);
+    expect(inv.takeUnminedOre(3)).toBe(3);
     expect(inv.unminedOre).toBe(7);
-    expect(inv.minedOre).toBe(3);
-    inv.mine(100);
+    expect(inv.takeUnminedOre(100)).toBe(7);
     expect(inv.unminedOre).toBe(0);
-    expect(inv.minedOre).toBe(10);
     inv.material = 4;
     expect(inv.takeMaterial(10)).toBe(4);
     expect(inv.material).toBe(0);
@@ -334,8 +332,6 @@ describe('economy and energy', () => {
     const inv = new PlanetInventory();
     inv.unminedOre = 150;
     expect(inv.unminedOre).toBe(100);
-    inv.minedOre = 120;
-    expect(inv.minedOre).toBe(100);
     inv.material = 200;
     expect(inv.material).toBe(100);
     inv.energy = 99;
@@ -345,29 +341,20 @@ describe('economy and energy', () => {
     expect(inv.material).toBe(0);
   });
 
-  it('extractor mines ore and stops when ore runs out', () => {
+  it('extractor converts ore into material directly', () => {
     const planet = new Planet(new Position(0, 0), .1);
     planet.inventory.unminedOre = 10;
     planet.parts[0] = new Extractor();
     planet.update(2);
-    expect(planet.inventory.minedOre).toBeCloseTo(1, 1);
     expect(planet.inventory.unminedOre).toBeCloseTo(9, 1);
+    expect(planet.inventory.material).toBeCloseTo(0.8, 1);
 
     const empty = new Planet(new Position(0, 0), .1);
     empty.inventory.unminedOre = 0.3;
     empty.parts[0] = new Extractor();
     empty.update(1);
     expect(empty.inventory.unminedOre).toBe(0);
-    expect(empty.inventory.minedOre).toBeCloseTo(0.3, 5);
-  });
-
-  it('refinery converts ore into material', () => {
-    const planet = new Planet(new Position(0, 0), .1);
-    planet.inventory.minedOre = 10;
-    planet.parts[0] = new Refinery();
-    planet.update(2);
-    expect(planet.inventory.minedOre).toBeCloseTo(9, 1);
-    expect(planet.inventory.material).toBeCloseTo(0.8, 1);
+    expect(empty.inventory.material).toBeCloseTo(0.24, 5);
   });
 
   it('collector gathers energy based on potential', () => {
@@ -404,17 +391,132 @@ describe('economy and energy', () => {
     expect(planet.inventory.material).toBe(0);
   });
 
-  it('planets have 3-5 building slots', () => {
-    let seed = 17;
-    const random = () => {
-      seed = (seed * 1103515245 + 12345) % 2147483647;
-      return seed / 2147483647;
-    };
-    const space = new Space(random);
-    space.planets.forEach((planet) => {
-      expect(planet.parts.length).toBeGreaterThanOrEqual(3);
-      expect(planet.parts.length).toBeLessThanOrEqual(5);
-    });
+  it('builds on a specific slot and leaves the other free slots untouched', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Player);
+    planet.inventory.material = 0;
+    expect(planet.parts[1]).toBeInstanceOf(FreeIndustry);
+    planet.buildIndustryAt(new Collector(), 1, Owner.Player);
+    expect(planet.parts[1]).toBeInstanceOf(IndustryOrder);
+    expect(planet.parts[0]).toBeInstanceOf(FreeIndustry);
+    expect(planet.parts[2]).toBeInstanceOf(FreeIndustry);
+  });
+
+  it('buildIndustryAt refuses an occupied slot and the wrong owner', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Player);
+    planet.buildIndustry(new Extractor(), Owner.Player);
+    expect(planet.parts[0]).toBeInstanceOf(IndustryOrder);
+    expect(() => planet.buildIndustryAt(new Collector(), 0, Owner.Player)).toThrow();
+    expect(() => planet.buildIndustryAt(new Collector(), 1, Owner.Computer)).toThrow();
+    expect(planet.parts[1]).toBeInstanceOf(FreeIndustry);
+  });
+
+  it('buildIndustryAt queues without consuming material until the next update', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Player);
+    planet.inventory.material = 0;
+    planet.buildIndustryAt(new Extractor(), 2, Owner.Player);
+    expect(planet.parts[2]).toBeInstanceOf(IndustryOrder);
+    expect(planet.inventory.material).toBe(0);
+    planet.inventory.material = 3;
+    planet.update(.1);
+    expect(planet.parts[2]).toBeInstanceOf(IndustryConstruction);
+    expect(planet.inventory.material).toBe(0);
+  });
+
+  it('rejects a target beyond jump range', () => {
+    const near = new Planet(new Position(0, 0), .1);
+    near.setOwner(Owner.Player);
+    const far = new Planet(new Position(10, 0), .1);
+    expect(() => near.setTarget(far, Owner.Player)).toThrow();
+  });
+
+  it('accepts a target within jump range', () => {
+    const near = new Planet(new Position(0, 0), .1);
+    near.setOwner(Owner.Player);
+    const target = new Planet(new Position(1, 0), .1);
+    expect(() => near.setTarget(target, Owner.Player)).not.toThrow();
+    expect(near.getTarget()).toBe(target);
+  });
+
+  it('stores and clears a player future target on an unowned planet', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    const target = new Planet(new Position(1, 0), .1);
+    planet.setPlayerFutureTarget(target);
+    expect(planet.getPlayerFutureTarget()).toBe(target);
+    planet.clearPlayerFutureTarget();
+    expect(planet.getPlayerFutureTarget()).toBeUndefined();
+  });
+
+  it('rejects a future target beyond jump range', () => {
+    const planet = new Planet(new Position(0, 0), .1);
+    const far = new Planet(new Position(10, 0), .1);
+    expect(() => planet.setPlayerFutureTarget(far)).toThrow();
+  });
+
+  it('colonizer grants bootstrap material on capture', () => {
+    const home = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    home.placeSpaceport([], Owner.Player);
+    const target = new Planet(new Position(0.5, 0), .1);
+    target.setOwner(Owner.None);
+    const colonizer = new Colonizer(new Position(0.5, 0), []);
+    colonizer.setHome(home);
+    home.setTarget(target, Owner.Player);
+    const beforeMaterial = target.inventory.material;
+    for (let i = 0; i < 100 && colonizer.isAlive(); i += 1) {
+      colonizer.updateBehavior(.1);
+      colonizer.avoidPlanets([home, target]);
+      colonizer.update(.1);
+    }
+    expect(target.getOwner()).toBe(Owner.Player);
+    expect(target.inventory.material).toBeGreaterThanOrEqual(beforeMaterial + GameConstants.Extractor.MaterialCost);
+  });
+
+  it('colonizer applies a player future target on capture', () => {
+    const home = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    home.placeSpaceport([], Owner.Player);
+    const target = new Planet(new Position(0.5, 0), .1);
+    target.setOwner(Owner.None);
+    const nextTarget = new Planet(new Position(1, 0), .1);
+    nextTarget.setOwner(Owner.None);
+    target.setPlayerFutureTarget(nextTarget);
+    const colonizer = new Colonizer(new Position(0.5, 0), []);
+    colonizer.setHome(home);
+    home.setTarget(target, Owner.Player);
+    for (let i = 0; i < 100 && colonizer.isAlive(); i += 1) {
+      colonizer.updateBehavior(.1);
+      colonizer.avoidPlanets([home, target]);
+      colonizer.update(.1);
+    }
+    expect(target.getOwner()).toBe(Owner.Player);
+    expect(target.getTarget()).toBe(nextTarget);
+    expect(target.getPlayerFutureTarget()).toBeUndefined();
+  });
+
+  it('enemy randomly builds planetary defense guns', () => {
+    let seed = 42;
+    const random = () => { seed = (seed * 1103515245 + 12345) % 2147483647; return seed / 2147483647; };
+    const game = new Game(random);
+    const computerPlanet = game.space.getPlanetsThatBelongTo(Owner.Computer)[0];
+    computerPlanet.inventory.material = 100;
+    const initialPdcCount = computerPlanet.parts.filter((p) => p instanceof PlanetaryDefenseGun).length;
+    for (let i = 0; i < 500; i += 1) game.update(.1);
+    const finalPdcCount = computerPlanet.parts.filter((p) => p instanceof PlanetaryDefenseGun).length;
+    expect(finalPdcCount).toBeGreaterThan(initialPdcCount);
+  });
+
+
+  it('planet slot count is determined by radius', () => {
+    const small = new Planet(new Position(0, 0), GameConstants.Space.MinPlanetRadius);
+    expect(small.parts.length).toBe(GameConstants.Planet.MinSlots);
+    const large = new Planet(new Position(0, 0), GameConstants.Space.MinPlanetRadius + GameConstants.Space.PlanetRadiusVariance);
+    expect(large.parts.length).toBe(GameConstants.Planet.MaxSlots);
+    const medium = new Planet(new Position(0, 0), GameConstants.Space.MinPlanetRadius + GameConstants.Space.PlanetRadiusVariance / 2);
+    expect(medium.parts.length).toBeGreaterThanOrEqual(GameConstants.Planet.MinSlots);
+    expect(medium.parts.length).toBeLessThanOrEqual(GameConstants.Planet.MaxSlots);
   });
 
   it('starting planets have a spaceport and starting resources', () => {
@@ -429,21 +531,16 @@ describe('economy and energy', () => {
     });
   });
 
-  it('starting planets have five building slots', () => {
-    const game = new Game(Math.random);
-    [...game.space.getPlanetsThatBelongTo(Owner.Player), ...game.space.getPlanetsThatBelongTo(Owner.Computer)]
-      .forEach((planet) => expect(planet.parts.length).toBe(5));
-  });
-
-  it('starting planets have an extractor, refinery, collector and colonizer industry', () => {
+  it('starting planets have an extractor, collector and colonizer industry', () => {
     const game = new Game(Math.random);
     [...game.space.getPlanetsThatBelongTo(Owner.Player), ...game.space.getPlanetsThatBelongTo(Owner.Computer)]
       .forEach((planet) => {
         expect(planet.parts[0]).toBeInstanceOf(Extractor);
-        expect(planet.parts[1]).toBeInstanceOf(Refinery);
-        expect(planet.parts[2]).toBeInstanceOf(Collector);
-        expect(planet.parts[3]).toBeInstanceOf(ColonizerIndustry);
-        expect(planet.parts[4]).toBeInstanceOf(FreeIndustry);
+        expect(planet.parts[1]).toBeInstanceOf(Collector);
+        expect(planet.parts[2]).toBeInstanceOf(ColonizerIndustry);
+        for (let i = 3; i < planet.parts.length; i += 1) {
+          expect(planet.parts[i]).toBeInstanceOf(FreeIndustry);
+        }
       });
   });
 
@@ -549,7 +646,6 @@ describe('economy and energy', () => {
     destination.setOwner(Owner.Player);
     home.placeSpaceport([], Owner.Player);
     destination.placeSpaceport([], Owner.Player);
-    home.inventory.minedOre = 5;
     home.inventory.material = 5;
     home.inventory.energy = 20;
     home.setTarget(destination, Owner.Player);
@@ -569,7 +665,6 @@ describe('economy and energy', () => {
       if (!freighter.isAlive()) break;
     }
 
-    expect(destination.inventory.minedOre).toBeGreaterThan(0);
     expect(destination.inventory.material).toBeGreaterThan(0);
     expect(destination.inventory.energy).toBeGreaterThan(0);
   });
@@ -581,7 +676,6 @@ describe('economy and energy', () => {
     destination.setOwner(Owner.Player);
     home.placeSpaceport([], Owner.Player);
     destination.placeSpaceport([], Owner.Player);
-    home.inventory.minedOre = 8;
     home.inventory.material = 8;
     home.inventory.energy = 8;
     home.setTarget(destination, Owner.Player);
@@ -601,9 +695,7 @@ describe('economy and energy', () => {
       if (!freighter.isAlive()) break;
     }
 
-    expect(home.inventory.minedOre).toBeGreaterThanOrEqual(4);
     expect(home.inventory.material).toBeGreaterThanOrEqual(4);
-    expect(destination.inventory.minedOre).toBeGreaterThan(0);
     expect(destination.inventory.material).toBeGreaterThan(0);
   });
 
@@ -614,10 +706,8 @@ describe('economy and energy', () => {
     destination.setOwner(Owner.Player);
     home.placeSpaceport([], Owner.Player);
     destination.placeSpaceport([], Owner.Player);
-    home.inventory.minedOre = 5;
     home.inventory.material = 5;
     home.inventory.energy = 5;
-    destination.inventory.minedOre = 10;
     destination.inventory.material = 10;
     destination.inventory.energy = 10;
     home.setTarget(destination, Owner.Player);
@@ -637,9 +727,8 @@ describe('economy and energy', () => {
       if (!freighter.isAlive()) break;
     }
 
-    expect(home.inventory.minedOre).toBeCloseTo(5, 0);
     expect(home.inventory.material).toBeCloseTo(5, 0);
-    expect(destination.inventory.minedOre).toBeCloseTo(10, 0);
+    expect(destination.inventory.material).toBeCloseTo(10, 0);
   });
 });
 
@@ -691,14 +780,16 @@ describe('planetary defense guns', () => {
 
   it('game fires defense guns at orbiting hostile ships', () => {
     const game = new Game(Math.random);
-    const computerPlanet = game.space.getPlanetsThatBelongTo(Owner.Computer)[0];
-    computerPlanet.inventory.material = 10;
-    computerPlanet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer);
-    computerPlanet.update(2.1);
+    const planet = new Planet(new Position(0, 0), .1);
+    planet.setOwner(Owner.Computer);
+    planet.inventory.material = 10;
+    planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer);
+    planet.update(2.1);
+    game.space.planets.push(planet);
 
-    const gun = computerPlanet.getPlanetaryDefenseGuns()[0];
+    const gun = planet.getPlanetaryDefenseGuns()[0];
     const hunter = new Hunter(new Position(gun.position.x, gun.position.y));
-    hunter.setHome(computerPlanet);
+    hunter.setHome(planet);
     game.playerShips.push(hunter);
 
     for (let i = 0; i < 30 && hunter.isAlive(); i += 1) game.update(.1);

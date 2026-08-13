@@ -18,11 +18,12 @@ import {
   Planet,
   PlanetaryDefenseGun,
   Position,
-  Refinery,
   Ship,
   Spaceport,
 } from '../model/index.ts';
 import spritesUrl from '../../../res/sprites.png';
+import { computeWorldBounds, WorldBounds } from './world-bounds.ts';
+import { ownerColor } from './owner-colors.ts';
 
 export class Camera {
   private focus = new Position(0, 0);
@@ -37,7 +38,7 @@ export class Camera {
     this.focus.y -= modelDelta.y;
     return modelDelta;
   }
-  changeZoom(amount: number) { this.zoom = Math.min(4, Math.max(.5, this.zoom * Math.exp(amount))); }
+  changeZoom(amount: number, minZoom = 0.5) { this.zoom = Math.min(4, Math.max(minZoom, this.zoom * Math.exp(amount))); }
   viewToModel(point: { x: number; y: number }) {
     const scale = this.scale();
     return new Position(
@@ -66,7 +67,9 @@ export class Renderer {
   private selectedIndustryIndex?: number;
   private readonly sprites = new Image();
   private spritesReady = false;
+  private readonly bounds: WorldBounds;
   constructor(private canvas: HTMLCanvasElement, private game: Game) {
+    this.bounds = computeWorldBounds(game.space.planets.map((planet) => planet.centerPosition));
     this.resize();
     this.sprites.onload = () => { this.spritesReady = true; };
     this.sprites.src = spritesUrl;
@@ -85,6 +88,7 @@ export class Renderer {
       if (this.cameraFocus) {
         this.cameraFocus.x -= modelDelta.x;
         this.cameraFocus.y -= modelDelta.y;
+        this.clampFocus();
       }
       this.panPointer.x = event.clientX;
       this.panPointer.y = event.clientY;
@@ -96,14 +100,27 @@ export class Renderer {
     canvas.addEventListener('pointercancel', stopPanning);
     canvas.addEventListener('wheel', (event) => {
       event.preventDefault();
-      this.camera.changeZoom(-event.deltaY * .001);
+      if (!this.cameraFocus) this.cameraFocus = new Position(this.camera.getFocus().x, this.camera.getFocus().y);
+      const rect = this.canvas.getBoundingClientRect();
+      const viewPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      const modelPoint = this.camera.viewToModel(viewPoint);
+      this.camera.changeZoom(-event.deltaY * .001, this.minZoom());
+      const scale = this.camera.width * this.camera.getZoom();
+      this.cameraFocus = new Position(
+        modelPoint.x - (viewPoint.x - this.camera.width / 2) / scale,
+        modelPoint.y - (viewPoint.y - this.camera.height / 2) / scale,
+      );
+      this.clampFocus();
     }, { passive: false });
   }
   private resize() {
     const ratio = window.devicePixelRatio || 1; const rect = this.canvas.getBoundingClientRect();
     this.canvas.width = Math.max(1, Math.floor(rect.width * ratio)); this.canvas.height = Math.max(1, Math.floor(rect.height * ratio));
     this.camera = new Camera(rect.width, rect.height);
+    const min = this.minZoom();
+    if (this.camera.getZoom() < min) this.camera.changeZoom(0, min);
     if (this.cameraFocus) this.camera.setFocus(this.cameraFocus);
+    this.clampFocus();
   }
   render(focus?: Planet) {
     const ctx = this.canvas.getContext('2d'); if (!ctx) return;
@@ -114,19 +131,34 @@ export class Renderer {
     this.game.playerShips.filter((ship) => ship.isAlive()).forEach((ship) => this.drawShip(ctx, ship, Owner.Player));
     this.game.computerShips.filter((ship) => ship.isAlive()).forEach((ship) => this.drawShip(ctx, ship, Owner.Computer));
   }
-  private color(owner: Owner) { return owner === Owner.Player ? '#ff8080' : owner === Owner.Computer ? '#80ff80' : '#808080'; }
   focusOn(planet: Planet) {
     this.cameraFocus = new Position(
       planet.centerPosition.x,
       planet.centerPosition.y,
     );
-    this.camera.setFocus(this.cameraFocus);
+    this.clampFocus();
   }
   setCameraFocus(position: Position) {
     this.cameraFocus = new Position(position.x, position.y);
-    this.camera.setFocus(this.cameraFocus);
+    this.clampFocus();
   }
   getCamera() { return this.camera; }
+  private minZoom() {
+    const rangeX = this.bounds.maxX - this.bounds.minX;
+    const rangeY = this.bounds.maxY - this.bounds.minY;
+    return Math.min(1 / rangeX, this.camera.height / (this.camera.width * rangeY));
+  }
+  private clampFocus() {
+    if (!this.cameraFocus) return;
+    const extent = this.camera.getViewExtent();
+    const loX = this.bounds.minX + extent.width / 2;
+    const hiX = this.bounds.maxX - extent.width / 2;
+    const loY = this.bounds.minY + extent.height / 2;
+    const hiY = this.bounds.maxY - extent.height / 2;
+    this.cameraFocus.x = loX <= hiX ? Math.min(Math.max(this.cameraFocus.x, loX), hiX) : (this.bounds.minX + this.bounds.maxX) / 2;
+    this.cameraFocus.y = loY <= hiY ? Math.min(Math.max(this.cameraFocus.y, loY), hiY) : (this.bounds.minY + this.bounds.maxY) / 2;
+    this.camera.setFocus(this.cameraFocus);
+  }
   setSelectedPlanet(planet?: Planet) { this.selectedPlanet = planet; }
   setSelectedIndustry(index?: number) { this.selectedIndustryIndex = index; }
   private pointerPosition(event: PointerEvent) {
@@ -134,11 +166,15 @@ export class Renderer {
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
   private drawTargetArrow(ctx: CanvasRenderingContext2D, planet: Planet) {
-    if (planet.getOwner() !== Owner.Player) return;
-    const target = planet.getTarget(); if (target === planet) return;
-    const sourcePosition = this.camera.modelToView(planet.centerPosition);
+    const target = planet.getOwner() === Owner.Player && planet.getTarget() !== planet ? planet.getTarget() : undefined;
+    const futureTarget = planet.getPlayerFutureTarget();
+    if (!target && !futureTarget) return;
+    this.drawArrow(ctx, planet, target ?? futureTarget!, target !== undefined, '#707070');
+  }
+  private drawArrow(ctx: CanvasRenderingContext2D, source: Planet, target: Planet, solid: boolean, color: string) {
+    const sourcePosition = this.camera.modelToView(source.centerPosition);
     const targetPosition = this.camera.modelToView(target.centerPosition);
-    const sourceRadius = this.camera.radius(planet.radius);
+    const sourceRadius = this.camera.radius(source.radius);
     const targetRadius = this.camera.radius(target.radius);
     const direction = Math.atan2(
       targetPosition.y - sourcePosition.y,
@@ -154,8 +190,10 @@ export class Renderer {
     };
 
     const arrowSize = 7;
-    ctx.strokeStyle = '#707070';
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
+    ctx.setLineDash(solid ? [] : [4, 3]);
+    ctx.globalAlpha = solid ? 1 : 0.6;
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(arrowEnd.x, arrowEnd.y);
@@ -164,10 +202,12 @@ export class Renderer {
     ctx.moveTo(arrowEnd.x, arrowEnd.y);
     ctx.lineTo(arrowEnd.x - arrowSize * Math.cos(direction + Math.PI / 6), arrowEnd.y - arrowSize * Math.sin(direction + Math.PI / 6));
     ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
   private drawPlanet(ctx: CanvasRenderingContext2D, planet: Planet, focus?: Planet) {
     const center = this.camera.modelToView(planet.centerPosition); const radius = this.camera.radius(planet.radius);
-    ctx.fillStyle = this.color(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = ownerColor(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
     if (planet.hasSpaceport()) {
       ctx.strokeStyle = '#a0a0a0';
       ctx.lineWidth = 1;
@@ -248,7 +288,6 @@ export class Renderer {
     const inv = planet.inventory;
     const resources = [
       { value: inv.unminedOre, color: '#8a5a2a' },
-      { value: inv.minedOre, color: '#c08040' },
       { value: inv.material, color: '#f0d060' },
       { value: inv.energy, color: '#60d0f0' },
     ];
@@ -287,7 +326,7 @@ export class Renderer {
         return;
       }
     }
-    this.drawShipSymbol(ctx, center, size, ship, this.color(owner), direction, right);
+    this.drawShipSymbol(ctx, center, size, ship, ownerColor(owner), direction, right);
   }
   private drawShotEffect(ctx: CanvasRenderingContext2D, from: Position, to: Position, remaining: number, kind: 'shot' | 'bomb') {
     const start = this.camera.modelToView(from);
@@ -315,16 +354,6 @@ export class Renderer {
     ctx.fillStyle = color;
     if (ship instanceof Extractor) {
       ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
-      return;
-    }
-    if (ship instanceof Refinery) {
-      ctx.beginPath();
-      ctx.moveTo(center.x, center.y - size);
-      ctx.lineTo(center.x + size, center.y);
-      ctx.lineTo(center.x, center.y + size);
-      ctx.lineTo(center.x - size, center.y);
-      ctx.closePath();
-      if (filled) ctx.fill(); else { ctx.strokeStyle = color; ctx.stroke(); }
       return;
     }
     if (ship instanceof Collector) {
@@ -449,7 +478,6 @@ export class Renderer {
   private industrySpriteIndex(industry: Industry): number | undefined {
     if (industry instanceof Spaceport) return 0;
     if (industry instanceof Extractor) return 1;
-    if (industry instanceof Refinery) return 2;
     if (industry instanceof Collector) return 3;
     if (industry instanceof ColonizerIndustry) return 4;
     if (industry instanceof HunterIndustry) return 5;
@@ -478,6 +506,35 @@ export class Renderer {
     ctx.rotate(angle);
     ctx.drawImage(this.sprites, index * 256, 0, 256, 256, 0, -size * 2, size * 4, size * 4);
     ctx.restore();
+  }
+  drawIndustryIcon(canvas: HTMLCanvasElement, industry: Industry) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const index = this.industrySpriteIndex(industry);
+    const w = canvas.width;
+    const h = canvas.height;
+    const size = Math.min(w, h) / 4;
+    ctx.clearRect(0, 0, w, h);
+    if (index === undefined || !this.spritesReady) return;
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.drawImage(this.sprites, index * 256, 0, 256, 256, -size * 2, -size * 2, size * 4, size * 4);
+    ctx.restore();
+  }
+  drawFreeSlotIcon(canvas: HTMLCanvasElement) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    const r = Math.min(w, h) / 2 - 1;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
   private drawShipSprite(
     ctx: CanvasRenderingContext2D,
@@ -519,10 +576,9 @@ export class Renderer {
     }
     return undefined;
   }
-  getIndustryAt(point: { x: number; y: number }) {
+  getSlotAt(point: { x: number; y: number }) {
     for (const planet of this.game.space.planets) {
       for (let index = 0; index < planet.parts.length; index += 1) {
-        if (planet.parts[index] instanceof FreeIndustry) continue;
         const position = this.industryDrawCenter(planet, index);
         const size = this.camera.radius(planet.radius) / 4 * 0.7;
         if (Math.hypot(point.x - position.x, point.y - position.y) <= size * 1.8) {
@@ -531,5 +587,9 @@ export class Renderer {
       }
     }
     return undefined;
+  }
+  clientPoint(point: { x: number; y: number }) {
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: point.x + rect.left, y: point.y + rect.top };
   }
 }

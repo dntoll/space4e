@@ -11,7 +11,9 @@ export class Extractor extends Industry {
   getProgress() { return this.cycleAccumulator % 1; }
 
   update(dt: number, _position: Position, _launchPosition: Position, home: Planet): void {
-    const mined = home.inventory.mine(GameConstants.Extractor.MiningRate * dt);
-    this.cycleAccumulator += mined;
+    const mined = home.inventory.takeUnminedOre(GameConstants.Extractor.MiningRate * dt);
+    const produced = mined * GameConstants.Extractor.MaterialPerOre;
+    home.inventory.material += produced;
+    this.cycleAccumulator += produced;
   }
 }

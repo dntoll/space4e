@@ -14,9 +14,16 @@ export class Planet {
   private spaceport?: Spaceport;
   private target: Planet = this;
   private owner: Owner = Owner.None;
+  private playerFutureTarget?: Planet;
 
-  constructor(public centerPosition: Position, public radius: number, slotCount = GameConstants.Planet.MinSlots) {
-    this.parts = new Array(slotCount).fill(null).map(() => new FreeIndustry());
+  constructor(public centerPosition: Position, public radius: number) {
+    this.parts = new Array(Planet.slotCountForRadius(radius)).fill(null).map(() => new FreeIndustry());
+  }
+
+  static slotCountForRadius(radius: number) {
+    const fraction = Math.max(0, Math.min(1,
+      (radius - GameConstants.Space.MinPlanetRadius) / GameConstants.Space.PlanetRadiusVariance));
+    return Math.round(GameConstants.Planet.MinSlots + fraction * (GameConstants.Planet.MaxSlots - GameConstants.Planet.MinSlots));
   }
 
   getTarget() { return this.target; }
@@ -29,11 +36,22 @@ export class Planet {
     this.spaceport = new Spaceport(allies);
   }
 
+  maxJumpDistance() { return GameConstants.Ship.MaxEnergy / GameConstants.Ship.TravelCostPerDistance; }
+
   setTarget(target: Planet, owner: Owner) {
     if (owner !== this.owner) throw new Error('Wrong owner');
+    if (target !== this && this.centerPosition.distanceTo(target.centerPosition) > this.maxJumpDistance()) throw new Error('Target out of range');
     if (target !== this && target.getTarget() === this && target.getOwner() === owner) target.setTarget(target, owner);
     this.target = target;
   }
+
+  setPlayerFutureTarget(target: Planet) {
+    if (target === this) throw new Error('Cannot target self');
+    if (this.centerPosition.distanceTo(target.centerPosition) > this.maxJumpDistance()) throw new Error('Target out of range');
+    this.playerFutureTarget = target;
+  }
+  getPlayerFutureTarget() { return this.playerFutureTarget; }
+  clearPlayerFutureTarget() { this.playerFutureTarget = undefined; }
 
   getTargetPlanet() {
     const follow = this.owner;
@@ -84,9 +102,13 @@ export class Planet {
     this.spaceport?.update(dt, this.centerPosition, this.getSpaceportSpawnPosition(), this);
   }
   buildIndustry(industry: Industry, owner: Owner) {
-    if (owner !== this.owner) throw new Error('Wrong owner');
     const index = this.parts.findIndex((part) => part instanceof FreeIndustry);
     if (index < 0) throw new Error('No free industry');
+    this.buildIndustryAt(industry, index, owner);
+  }
+  buildIndustryAt(industry: Industry, index: number, owner: Owner) {
+    if (owner !== this.owner) throw new Error('Wrong owner');
+    if (!(this.parts[index] instanceof FreeIndustry)) throw new Error('No free industry');
     this.parts[index] = new IndustryOrder(industry);
   }
   sellIndustry(index: number, owner: Owner) {
@@ -98,9 +120,6 @@ export class Planet {
       this.inventory.material += Math.floor(invested / 2);
     }
     this.parts[index] = new FreeIndustry();
-  }
-  expandSlotsTo(count: number) {
-    while (this.parts.length < count) this.parts.push(new FreeIndustry());
   }
   hasFactories() { return this.getFactories().length > 0; }
   hasPlanetaryDefenseGuns() {

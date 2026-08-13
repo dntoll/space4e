@@ -34,8 +34,8 @@ export class Space {
         indexOfBottomPlanet = ret.length;
       }
 
-      const slotCount = Math.floor(random() * (GameConstants.Planet.MaxSlots - GameConstants.Planet.MinSlots + 1)) + GameConstants.Planet.MinSlots;
-      const planet = new Planet(position, random() * GameConstants.Space.PlanetRadiusVariance + GameConstants.Space.MinPlanetRadius, slotCount);
+      const radius = random() * GameConstants.Space.PlanetRadiusVariance + GameConstants.Space.MinPlanetRadius;
+      const planet = new Planet(position, radius);
       planet.inventory.unminedOre = GameConstants.Space.UnminedOreMin + random() * GameConstants.Space.UnminedOreRange;
       planet.inventory.collectionPotential = GameConstants.Space.CollectionPotentialMin + random() * GameConstants.Space.CollectionPotentialRange;
       ret.push(planet);
@@ -53,7 +53,6 @@ export class Space {
   }
 
   private seedStartingPlanet(planet: Planet) {
-    planet.expandSlotsTo(GameConstants.Planet.StartingSlots);
     planet.inventory.material = GameConstants.StartingPlanet.Material;
     planet.inventory.energy = GameConstants.StartingPlanet.Energy;
     planet.inventory.unminedOre = GameConstants.StartingPlanet.UnminedOre;

@@ -1,4 +1,5 @@
 import { GameConstants } from '../game-constants.ts';
+import { Owner } from './owner.ts';
 import { Position } from './position.ts';
 import { Ship, ShotEffect } from './ship.ts';
 
@@ -39,6 +40,14 @@ export class Colonizer extends Ship {
           targetPlanet.destroyConstructions();
           targetPlanet.setTarget(targetPlanet, owner);
           targetPlanet.placeSpaceport(this.allies, owner);
+          targetPlanet.inventory.material += GameConstants.Extractor.MaterialCost;
+          if (owner === Owner.Player) {
+            const futureTarget = targetPlanet.getPlayerFutureTarget();
+            if (futureTarget) {
+              try { targetPlanet.setTarget(futureTarget, owner); } catch { /* out of range */ }
+              targetPlanet.clearPlayerFutureTarget();
+            }
+          }
           this.kill();
         }
       } else {

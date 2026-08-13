@@ -20,11 +20,29 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .info-resource-value { width: 2.5rem; text-align: right; color: #e0e6ee; font-variant-numeric: tabular-nums; }
 .info-industry { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .2rem 0; border-bottom: 1px solid rgba(255,255,255,.05); }
 .info-industry:last-child { border-bottom: none; }
+.info-industry-sprite { flex: none; width: 20px; height: 20px; }
+.info-industry-free { cursor: pointer; }
+.info-industry-free:hover { background: rgba(255,255,255,.06); }
 .info-industry-name { color: #d0d8e4; flex: 1; white-space: nowrap; overflow: hidden; }
 .info-industry-state { color: #8a94a4; font-size: .72rem; white-space: nowrap; }
+.info-fleet-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .15rem 0; }
+.info-fleet-name { color: #d0d8e4; }
+.info-fleet-count { color: #8a94a4; font-variant-numeric: tabular-nums; }
 .sell-button { pointer-events: auto; border: 1px solid #654040; background: #2a1820; color: #ffb0b0; font-size: .68rem; padding: .15rem .4rem; border-radius: .3rem; cursor: pointer; }
 .sell-button:active { background: #3a2230; }
 .remove-target-button { pointer-events: auto; border: 1px solid #654040; background: #2a1820; color: #ffb0b0; font-size: .72rem; padding: .25rem .5rem; border-radius: .3rem; cursor: pointer; margin-bottom: .35rem; }
 .remove-target-button:active { background: #3a2230; }
-.build-panel { display: flex; flex-direction: column; gap: .3rem; }
-.build-button { pointer-events: auto; text-align: left; font-size: .75rem; padding: .35rem .5rem; }
+#popover-layer { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
+.popover { position: fixed; pointer-events: auto; background: rgba(16, 22, 34, .96); border: 1px solid #3a4456; border-radius: .5rem; padding: .4rem; font-size: .78rem; display: flex; flex-direction: column; gap: .25rem; min-width: 11rem; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
+.popover-title { font-size: .7rem; color: #9aa6b6; text-transform: uppercase; letter-spacing: .04em; padding: .1rem .3rem; }
+.build-menu-row { display: flex; align-items: center; gap: .4rem; text-align: left; padding: .3rem .4rem; }
+.build-menu-sprite { flex: none; width: 24px; height: 24px; }
+.build-menu-name { flex: 1; color: #d0d8e4; }
+.build-menu-cost { color: #8a94a4; font-size: .72rem; }
+.build-menu-code { color: #fff4a3; font-size: .72rem; font-weight: bold; min-width: 1ch; text-align: center; }
+.slot-menu-row { display: flex; align-items: center; gap: .4rem; padding: .2rem .3rem; }
+.slot-menu-sprite { flex: none; width: 24px; height: 24px; }
+.slot-menu-name { flex: 1; color: #d0d8e4; }
+.slot-menu-state { color: #8a94a4; font-size: .72rem; }
+.slot-menu-sell { pointer-events: auto; border: 1px solid #654040; background: #2a1820; color: #ffb0b0; font-size: .68rem; padding: .2rem .4rem; border-radius: .3rem; cursor: pointer; }
+.slot-menu-sell:active { background: #3a2230; }

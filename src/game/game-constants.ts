@@ -6,7 +6,6 @@ export const GameConstants = {
   Planet: {
     MinSlots: 3,
     MaxSlots: 5,
-    StartingSlots: 5,
   },
 
   Space: {
@@ -38,13 +37,8 @@ export const GameConstants = {
 
   Extractor: {
     MiningRate: 0.5,
+    MaterialPerOre: 0.8,
     MaterialCost: 3,
-  },
-
-  Refinery: {
-    OreConsumption: 0.5,
-    MaterialProduction: 0.4,
-    MaterialCost: 4,
   },
 
   Collector: {
@@ -102,5 +96,9 @@ export const GameConstants = {
     Range: 0.06,
     ShotCooldown: 1,
     ShotEffectDuration: 0.3,
+  },
+
+  Computer: {
+    PdcBuildChance: 0.02,
   },
 };

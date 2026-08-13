@@ -1,14 +1,16 @@
-import { BomberIndustry, ColonizerIndustry, Collector, Extractor, FreeIndustry, Game, HunterIndustry, Industry, Owner, Planet, PlanetaryDefenseGun, Refinery } from '../model/index.ts';
+import { BomberIndustry, ColonizerIndustry, Collector, Extractor, FreeIndustry, Game, HunterIndustry, Industry, Owner, Planet, PlanetaryDefenseGun } from '../model/index.ts';
 import { Command, Input } from '../view/input.ts';
-import { BuildOption, InfoPanel } from '../view/info-panel.ts';
-import { ViewStrings } from '../view/view-strings.ts';
+import { InfoPanel } from '../view/info-panel.ts';
 import { Renderer } from '../view/renderer.ts';
+import { BuildEntry, BuildMenu } from '../view/build-menu.ts';
+import { SlotMenu } from '../view/slot-menu.ts';
 
-type BuildCommand = [Command, () => Industry, number];
+type BuildCommand = [Command, () => Industry];
 
 export class Controller {
   private focus?: Planet;
   private selectedIndustryIndex?: number;
+  private popover?: BuildMenu | SlotMenu;
   private readonly buildCommands: BuildCommand[];
   private readonly infoPanel: InfoPanel;
   constructor(private game: Game, private renderer: Renderer, private input: Input) {
@@ -18,16 +20,18 @@ export class Controller {
       this.renderer.focusOn(this.focus);
     }
     this.buildCommands = [
-      ['extractor', () => new Extractor(), new Extractor().getMaterialCost()],
-      ['refinery', () => new Refinery(), new Refinery().getMaterialCost()],
-      ['collector', () => new Collector(), new Collector().getMaterialCost()],
-      ['colonizer', () => new ColonizerIndustry(this.game.playerShips), new ColonizerIndustry(this.game.playerShips).getMaterialCost()],
-      ['hunter', () => new HunterIndustry(this.game.playerShips), new HunterIndustry(this.game.playerShips).getMaterialCost()],
-      ['bomber', () => new BomberIndustry(this.game.playerShips), new BomberIndustry(this.game.playerShips).getMaterialCost()],
-      ['defense', () => new PlanetaryDefenseGun(), new PlanetaryDefenseGun().getMaterialCost()],
+      ['extractor', () => new Extractor()],
+      ['collector', () => new Collector()],
+      ['colonizer', () => new ColonizerIndustry(this.game.playerShips)],
+      ['hunter', () => new HunterIndustry(this.game.playerShips)],
+      ['bomber', () => new BomberIndustry(this.game.playerShips)],
+      ['defense', () => new PlanetaryDefenseGun()],
     ];
     this.infoPanel = new InfoPanel(
-      (command) => this.attemptBuild(command as Command),
+      this.renderer,
+      (index, anchor) => {
+        if (this.focus) this.openBuildMenu(this.focus, index, anchor);
+      },
       (index) => this.attemptSell(index),
       () => this.attemptRemoveTarget(),
     );
@@ -39,25 +43,17 @@ export class Controller {
     this.handleKeyboardBuildCommands();
     this.handleKeyboardSellCommand();
     this.clearSelectionIfDestroyed();
-    this.infoPanel.update(this.focus, this.buildOptions());
+    this.infoPanel.update(this.focus, [...this.game.playerShips, ...this.game.computerShips]);
   }
   private handlePointerDownSelection() {
     const downPoint = this.input.consumePointerDown();
     if (!downPoint) return;
     const planet = this.renderer.getPlanetAt(downPoint);
     if (!planet) return;
+    this.closePopover();
     this.focus = planet;
     this.clearIndustrySelection();
     this.renderer.setSelectedPlanet(this.focus);
-  }
-  private buildOptions(): BuildOption[] | undefined {
-    if (!this.focus || this.focus.getOwner() !== Owner.Player) return undefined;
-    return this.buildCommands.map(([command, , cost]) => ({
-      command,
-      label: ViewStrings.Buttons[command as keyof typeof ViewStrings.Buttons],
-      cost,
-      enabled: true,
-    }));
   }
   private handleKeyboardBuildCommands() {
     this.buildCommands.forEach(([command]) => {
@@ -74,14 +70,24 @@ export class Controller {
     if (!entry) return;
     try { this.focus.buildIndustry(entry[1](), Owner.Player); } catch { /* no free slot or material */ }
   }
+  private attemptBuildAt(command: Command, planet: Planet, slotIndex: number) {
+    if (planet.getOwner() !== Owner.Player) return;
+    const entry = this.buildCommands.find(([c]) => c === command);
+    if (!entry) return;
+    try { planet.buildIndustryAt(entry[1](), slotIndex, Owner.Player); } catch { /* slot taken or material */ }
+  }
   private attemptSell(index: number) {
     if (!this.focus || this.focus.getOwner() !== Owner.Player) return;
     try { this.focus.sellIndustry(index, Owner.Player); } catch { /* nothing to sell */ }
     if (this.selectedIndustryIndex === index) this.clearIndustrySelection();
   }
   private attemptRemoveTarget() {
-    if (!this.focus || this.focus.getOwner() !== Owner.Player) return;
-    try { this.focus.setTarget(this.focus, Owner.Player); } catch { /* not owner */ }
+    if (!this.focus) return;
+    if (this.focus.getOwner() === Owner.Player) {
+      try { this.focus.setTarget(this.focus, Owner.Player); } catch { /* not owner */ }
+    } else {
+      this.focus.clearPlayerFutureTarget();
+    }
   }
   private handleGesture() {
     const gesture = this.input.consumeGesture();
@@ -89,23 +95,59 @@ export class Controller {
     const startPlanet = this.renderer.getPlanetAt(gesture.start);
     const endPlanet = this.renderer.getPlanetAt(gesture.end);
     if (gesture.moved && this.focus && startPlanet === this.focus && endPlanet && endPlanet !== this.focus) {
-      try {
-        this.focus.setTarget(endPlanet, Owner.Player);
-      } catch { /* not a player planet */ }
+      this.closePopover();
+      if (this.focus.getOwner() === Owner.Player) {
+        try { this.focus.setTarget(endPlanet, Owner.Player); } catch { /* out of range or not owner */ }
+      } else {
+        try { this.focus.setPlayerFutureTarget(endPlanet); } catch { /* out of range */ }
+      }
       return;
     }
     if (gesture.moved) return;
-    const industryHit = this.renderer.getIndustryAt(gesture.end);
-    if (industryHit && industryHit.planet.getOwner() === Owner.Player) {
-      this.focus = industryHit.planet;
-      this.selectedIndustryIndex = industryHit.index;
+    const slotHit = this.renderer.getSlotAt(gesture.end);
+    if (slotHit && slotHit.planet.getOwner() === Owner.Player) {
+      this.focus = slotHit.planet;
+      this.selectedIndustryIndex = slotHit.index;
       this.renderer.setSelectedPlanet(this.focus);
       this.renderer.setSelectedIndustry(this.selectedIndustryIndex);
+      const anchor = this.renderer.clientPoint(gesture.end);
+      const part = slotHit.planet.parts[slotHit.index];
+      if (part instanceof FreeIndustry) this.openBuildMenu(slotHit.planet, slotHit.index, anchor);
+      else this.openSlotMenu(slotHit.planet, slotHit.index, anchor);
       return;
     }
+    this.closePopover();
     this.focus = endPlanet;
     this.clearIndustrySelection();
     this.renderer.setSelectedPlanet(this.focus);
+  }
+  private openBuildMenu(planet: Planet, slotIndex: number, anchor: { x: number; y: number }) {
+    this.closePopover();
+    const entries: BuildEntry[] = this.buildCommands.map(([command, factory]) => ({
+      command,
+      sample: factory(),
+    }));
+    this.popover = new BuildMenu(
+      entries,
+      anchor,
+      this.renderer,
+      (command) => this.attemptBuildAt(command, planet, slotIndex),
+      () => { this.popover = undefined; },
+    );
+  }
+  private openSlotMenu(planet: Planet, slotIndex: number, anchor: { x: number; y: number }) {
+    this.closePopover();
+    const industry = planet.parts[slotIndex];
+    this.popover = new SlotMenu(
+      industry,
+      anchor,
+      this.renderer,
+      () => this.attemptSell(slotIndex),
+      () => { this.popover = undefined; },
+    );
+  }
+  private closePopover() {
+    this.popover?.close();
   }
   private clearSelectionIfDestroyed() {
     if (this.selectedIndustryIndex === undefined || !this.focus) return;

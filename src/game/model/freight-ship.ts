@@ -4,12 +4,10 @@ import type { Planet } from './planet.ts';
 import { Ship, ShotEffect } from './ship.ts';
 
 export class FreightShip extends Ship {
-  private oreCargo = 0;
   private materialCargo = 0;
   private energyCargo = 0;
   private flightState: 'loading' | 'toDestination' | 'returning' = 'loading';
 
-  getOreCargo() { return this.oreCargo; }
   getMaterialCargo() { return this.materialCargo; }
   getEnergyCargo() { return this.energyCargo; }
   getFlightState() { return this.flightState; }
@@ -53,11 +51,6 @@ export class FreightShip extends Ship {
 
   private loadCargo(source: PlanetInventory, destination: PlanetInventory) {
     const capacity = GameConstants.FreightShip.CargoCapacity;
-    this.oreCargo += this.takeForBalance(
-      source.minedOre, destination.minedOre,
-      capacity - this.oreCargo,
-      (amount) => source.takeMinedOre(amount),
-    );
     this.materialCargo += this.takeForBalance(
       source.material, destination.material,
       capacity - this.materialCargo,
@@ -84,8 +77,6 @@ export class FreightShip extends Ship {
   }
 
   private unloadCargo(inv: PlanetInventory) {
-    inv.minedOre += this.oreCargo;
-    this.oreCargo = 0;
     inv.material += this.materialCargo;
     this.materialCargo = 0;
     inv.energy += this.energyCargo;
@@ -93,6 +84,6 @@ export class FreightShip extends Ship {
   }
 
   private hasCargo() {
-    return this.oreCargo > 0 || this.materialCargo > 0 || this.energyCargo > 0;
+    return this.materialCargo > 0 || this.energyCargo > 0;
   }
 }
