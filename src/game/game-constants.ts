@@ -80,6 +80,7 @@ export const GameConstants = {
     OrbitRadiusMultiplier: 1.6,
     CloseOrbitThresholdMultiplier: 1.2,
     SpawnDistanceMultiplier: 1.25,
+    ColonizerOrbitMargin: 0.02,
   },
 
   Hunter: {
@@ -99,6 +100,6 @@ export const GameConstants = {
   },
 
   Computer: {
-    PdcBuildChance: 0.02,
+    CombatBuildChance: 0.03,
   },
 };

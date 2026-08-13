@@ -45,6 +45,8 @@ export const ViewStrings = {
     resources: 'Resources',
     industries: 'Industries',
     fleet: 'Fleet',
+    enemy: 'Enemy',
+    inbound: 'Inbound',
     target: 'Target',
     removeTarget: 'Remove target',
     unminedOre: 'Unmined ore',

@@ -40,6 +40,7 @@ export abstract class Ship {
 
   constructor(public center: Position) { this.center = new Position(center.x, center.y); }
   setHome(home: Planet) { this.home = home; }
+  getTargetPlanet() { return this.home?.getTargetPlanet(); }
   updateBehavior(_dt: number, _friends: Ship[], _opponents: Ship[]): ShotEffect | undefined { return undefined; }
   isReturningForFuel() { return this.returningForFuel; }
   getEnergy() { return this.energy; }

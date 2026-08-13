@@ -122,9 +122,6 @@ export class Planet {
     this.parts[index] = new FreeIndustry();
   }
   hasFactories() { return this.getFactories().length > 0; }
-  hasPlanetaryDefenseGuns() {
-    return this.parts.some((part) => part instanceof PlanetaryDefenseGun);
-  }
   getPlanetaryDefenseGuns() {
     return this.parts
       .map((industry, index) => ({ industry, index, position: this.getIndustryPosition(index) }))

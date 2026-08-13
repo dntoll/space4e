@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameConstants } from '../game-constants.ts';
-import { Bomber, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, IndustryConstruction, IndustryOrder, Owner, Planet, PlanetInventory, PlanetaryDefenseGun, Position, Ship, Space, Spaceport } from './index.ts';
+import { Bomber, BomberIndustry, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, HunterIndustry, IndustryConstruction, IndustryOrder, Owner, Planet, PlanetInventory, PlanetaryDefenseGun, Position, Ship, Space, Spaceport } from './index.ts';
 
 describe('model geometry', () => {
   it('normalizes directions and turns the shortest way', () => {
@@ -198,7 +198,7 @@ describe('game world', () => {
     expect(target.getOwner()).toBe(Owner.Player);
     expect(colonizer.isAlive()).toBe(false);
   });
-  it('waits on the surface until the target planet defense guns are destroyed', () => {
+  it('orbits high until factories are destroyed, then lands', () => {
     const home = new Planet(new Position(.5, .5), .1);
     const target = new Planet(new Position(0, 0), .1);
     home.setOwner(Owner.Player);
@@ -213,19 +213,20 @@ describe('game world', () => {
     colonizer.orbitAround(target.centerPosition, 1);
     colonizer.updateBehavior(.1);
 
-    const surfaceDistance = target.radius + colonizer.radius;
-    expect(colonizer.center.distanceTo(target.centerPosition)).toBeCloseTo(surfaceDistance);
-    expect(colonizer.shipSpeed).toBe(0);
-    expect(colonizer.isAlive()).toBe(true);
     expect(target.getOwner()).toBe(Owner.Computer);
+    expect(colonizer.isAlive()).toBe(true);
 
     target.killFactory();
-    colonizer.updateBehavior(.1);
+    for (let i = 0; i < 200 && colonizer.isAlive(); i += 1) {
+      colonizer.updateBehavior(.1);
+      colonizer.avoidPlanets([home, target]);
+      colonizer.update(.1);
+    }
 
     expect(target.getOwner()).toBe(Owner.Player);
     expect(colonizer.isAlive()).toBe(false);
   });
-  it('hostile factories do not block colonizer landing', () => {
+  it('hostile factories block colonizer landing', () => {
     const home = new Planet(new Position(.5, .5), .1);
     const target = new Planet(new Position(0, 0), .1);
     home.setOwner(Owner.Player);
@@ -239,6 +240,17 @@ describe('game world', () => {
     colonizer.setHome(home);
     colonizer.orbitAround(target.centerPosition, .056);
     colonizer.updateBehavior(.1);
+
+    expect(target.getOwner()).toBe(Owner.Computer);
+    expect(colonizer.isAlive()).toBe(true);
+
+    target.killFactory();
+    const orbitRadius = target.radius + GameConstants.PlanetaryDefenseGun.Range + GameConstants.Ship.ColonizerOrbitMargin;
+    for (let i = 0; i < 200 && colonizer.isAlive(); i += 1) {
+      colonizer.updateBehavior(.1);
+      colonizer.avoidPlanets([home, target]);
+      colonizer.update(.1);
+    }
 
     expect(target.getOwner()).toBe(Owner.Player);
     expect(colonizer.isAlive()).toBe(false);
@@ -496,16 +508,16 @@ describe('economy and energy', () => {
     expect(target.getPlayerFutureTarget()).toBeUndefined();
   });
 
-  it('enemy randomly builds planetary defense guns', () => {
+  it('enemy randomly builds combat industries', () => {
     let seed = 42;
     const random = () => { seed = (seed * 1103515245 + 12345) % 2147483647; return seed / 2147483647; };
     const game = new Game(random);
     const computerPlanet = game.space.getPlanetsThatBelongTo(Owner.Computer)[0];
     computerPlanet.inventory.material = 100;
-    const initialPdcCount = computerPlanet.parts.filter((p) => p instanceof PlanetaryDefenseGun).length;
     for (let i = 0; i < 500; i += 1) game.update(.1);
-    const finalPdcCount = computerPlanet.parts.filter((p) => p instanceof PlanetaryDefenseGun).length;
-    expect(finalPdcCount).toBeGreaterThan(initialPdcCount);
+    const types = computerPlanet.parts.map((p) => p.constructor);
+    const hasCombat = types.some((t) => t === PlanetaryDefenseGun || t === HunterIndustry || t === BomberIndustry);
+    expect(hasCombat).toBe(true);
   });
 
 

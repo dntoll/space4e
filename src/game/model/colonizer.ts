@@ -23,18 +23,18 @@ export class Colonizer extends Ship {
 
 
     if (targetBelongsToAnotherOwner) {
-      const surfaceDistance = targetPlanet.radius + this.radius;
-      const landingDistance = surfaceDistance + this.radius;
-      const distanceToCenter = this.center.distanceTo(targetPlanet.centerPosition);
+      if (!targetPlanet.hasFactories()) {
+        const surfaceDistance = targetPlanet.radius + this.radius;
+        const landingDistance = surfaceDistance + this.radius;
+        const distanceToCenter = this.center.distanceTo(targetPlanet.centerPosition);
 
-      if (distanceToCenter <= landingDistance + .001) {
-        const directionFromPlanet = targetPlanet.centerPosition.getDirectionTo(this.center);
-        this.center.x = targetPlanet.centerPosition.x + directionFromPlanet.x * surfaceDistance;
-        this.center.y = targetPlanet.centerPosition.y + directionFromPlanet.y * surfaceDistance;
-        this.setAimDirection(targetPlanet.centerPosition, 0);
-        this.speed = 0;
+        if (distanceToCenter <= landingDistance + .001) {
+          const directionFromPlanet = targetPlanet.centerPosition.getDirectionTo(this.center);
+          this.center.x = targetPlanet.centerPosition.x + directionFromPlanet.x * surfaceDistance;
+          this.center.y = targetPlanet.centerPosition.y + directionFromPlanet.y * surfaceDistance;
+          this.setAimDirection(targetPlanet.centerPosition, 0);
+          this.speed = 0;
 
-        if (!targetPlanet.hasPlanetaryDefenseGuns()) {
           const owner = this.home.getOwner();
           targetPlanet.setOwner(owner);
           targetPlanet.destroyConstructions();
@@ -49,16 +49,24 @@ export class Colonizer extends Ship {
             }
           }
           this.kill();
+        } else {
+          const remainingLandingDistance = distanceToCenter - landingDistance;
+          this.setAimDirection(targetPlanet.centerPosition, remainingLandingDistance);
+
+          //reduce speed to land
+          if (dt > 0 && this.speed * dt > remainingLandingDistance) {
+            this.speed = remainingLandingDistance / dt;
+          }
+          return undefined;
         }
       } else {
-        const remainingLandingDistance = distanceToCenter - landingDistance;
-        this.setAimDirection(targetPlanet.centerPosition, remainingLandingDistance);
-
-        //reduce speed to land
-        if (dt > 0 && this.speed * dt > remainingLandingDistance) {
-          this.speed = remainingLandingDistance / dt;
+        const orbitRadius = targetPlanet.radius + GameConstants.PlanetaryDefenseGun.Range + GameConstants.Ship.ColonizerOrbitMargin;
+        const withinOrbitRange = this.center.distanceTo(targetPlanet.centerPosition) <= orbitRadius;
+        if (this.isOrbitingAround(targetPlanet.centerPosition) || withinOrbitRange) {
+          this.orbitAroundPlanet(targetPlanet, orbitRadius);
+        } else {
+          this.goToTargetPlanet();
         }
-        return undefined;
       }
     } else {
       const withinOrbitRange = this.center.distanceTo(targetPlanet.centerPosition) <= targetPlanet.radius * GameConstants.Ship.OrbitRadiusMultiplier;

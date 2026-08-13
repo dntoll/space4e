@@ -20,13 +20,15 @@ export class InfoPanel {
     this.root.addEventListener('pointerdown', (event) => this.handleClick(event));
   }
 
-  update(planet?: Planet, ships: Ship[] = []) {
+  update(planet?: Planet, playerShips: Ship[] = [], computerShips: Ship[] = []) {
     if (!planet) {
       this.root.innerHTML = '';
       return;
     }
-    this.root.innerHTML = this.render(planet, ships);
+    this.root.innerHTML = this.render(planet, playerShips, computerShips);
     this.drawSprites(planet);
+    this.drawShipSprites(planet, playerShips, Owner.Player);
+    this.drawShipSprites(planet, computerShips, Owner.Computer);
     this.ensureSize();
   }
 
@@ -69,6 +71,8 @@ export class InfoPanel {
       ViewStrings.InfoPanel.resources,
       ViewStrings.InfoPanel.industries,
       ViewStrings.InfoPanel.fleet,
+      ViewStrings.InfoPanel.enemy,
+      ViewStrings.InfoPanel.inbound,
       ViewStrings.InfoPanel.removeTarget,
       ViewStrings.InfoPanel.ownerNone,
       ViewStrings.InfoPanel.ownerComputer,
@@ -118,7 +122,7 @@ export class InfoPanel {
     }
   }
 
-  private render(planet: Planet, ships: Ship[]): string {
+  private render(planet: Planet, playerShips: Ship[], computerShips: Ship[]): string {
     const inv = planet.inventory;
     const maxValue = GameConstants.Inventory.Capacity;
     const resources = [
@@ -143,8 +147,6 @@ export class InfoPanel {
       ? this.renderIndustry(planet.getSpaceport()!, undefined, false)
       : `<div class="info-industry"><canvas class="info-industry-sprite" width="20" height="20"></canvas><span class="info-industry-name">${ViewStrings.InfoPanel.spaceport}</span><span class="info-industry-state">${ViewStrings.InfoPanel.missing}</span></div>`;
 
-    const fleetRows = this.renderFleet(planet, ships);
-
     return `
       <h2>${ViewStrings.InfoPanel.title}</h2>
       <span class="info-owner" style="background:${ownerColor}">${ownerName}</span>
@@ -154,22 +156,37 @@ export class InfoPanel {
       <h3>${ViewStrings.InfoPanel.industries}</h3>
       ${slots}
       ${spaceport}
-      ${fleetRows}
+      ${this.renderShips(ViewStrings.InfoPanel.fleet, playerShips, planet, Owner.Player)}
+      ${this.renderShips(ViewStrings.InfoPanel.enemy, computerShips, planet, Owner.Computer)}
     `;
   }
 
-  private renderFleet(planet: Planet, ships: Ship[]): string {
+  private renderShips(title: string, ships: Ship[], planet: Planet, owner: Owner): string {
     const orbiting = ships.filter((ship) => ship.isAlive() && ship.isOrbitingAround(planet.centerPosition));
-    if (orbiting.length === 0) return '';
-    const counts = new Map<string, number>();
-    for (const ship of orbiting) {
-      const name = shipName(ship);
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-    const rows = [...counts.entries()]
-      .map(([name, count]) => `<div class="info-fleet-row"><span class="info-fleet-name">${name}</span><span class="info-fleet-count">${count}</span></div>`)
-      .join('');
-    return `<h3>${ViewStrings.InfoPanel.fleet}</h3>${rows}`;
+    const inbound = ships.filter((ship) => ship.isAlive()
+      && !ship.isOrbitingAround(planet.centerPosition)
+      && !ship.isReturningForFuel()
+      && ship.getTargetPlanet() === planet);
+    if (orbiting.length === 0 && inbound.length === 0) return '';
+
+    const types = new Set([...orbiting, ...inbound].map((ship) => ship.constructor));
+    const rows = [...types].map((type) => {
+      const sample = [...orbiting, ...inbound].find((ship) => ship.constructor === type)!;
+      const name = shipName(sample);
+      const orbitCount = orbiting.filter((ship) => ship.constructor === type).length;
+      const inboundCount = inbound.filter((ship) => ship.constructor === type).length;
+      const state = orbitCount > 0 && inboundCount > 0
+        ? `${orbitCount} (+${inboundCount} ${ViewStrings.InfoPanel.inbound})`
+        : inboundCount > 0
+          ? `${inboundCount} ${ViewStrings.InfoPanel.inbound}`
+          : `${orbitCount}`;
+      return `<div class="info-fleet-row" data-ship-type="${type.name}" data-ship-owner="${owner}">
+        <canvas class="info-fleet-sprite" width="20" height="20"></canvas>
+        <span class="info-fleet-name">${name}</span>
+        <span class="info-fleet-count">${state}</span>
+      </div>`;
+    }).join('');
+    return `<h3>${title}</h3>${rows}`;
   }
 
   private renderResource(label: string, value: number, max: number, color: string): string {
@@ -212,6 +229,20 @@ export class InfoPanel {
         const spaceport = planet.getSpaceport();
         if (spaceport) this.renderer.drawIndustryIcon(canvas, spaceport);
       }
+    });
+  }
+
+  private drawShipSprites(_planet: Planet, ships: Ship[], owner: Owner) {
+    const byType = new Map<string, Ship>();
+    for (const ship of ships) {
+      if (ship.isAlive() && !byType.has(ship.constructor.name)) byType.set(ship.constructor.name, ship);
+    }
+    this.root.querySelectorAll<HTMLCanvasElement>('.info-fleet-sprite').forEach((canvas) => {
+      const row = canvas.closest<HTMLElement>('.info-fleet-row');
+      if (!row) return;
+      if (row.dataset.shipOwner !== String(owner)) return;
+      const sample = byType.get(row.dataset.shipType ?? '');
+      if (sample) this.renderer.drawShipIcon(canvas, sample, owner);
     });
   }
 

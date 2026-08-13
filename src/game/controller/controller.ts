@@ -43,7 +43,7 @@ export class Controller {
     this.handleKeyboardBuildCommands();
     this.handleKeyboardSellCommand();
     this.clearSelectionIfDestroyed();
-    this.infoPanel.update(this.focus, [...this.game.playerShips, ...this.game.computerShips]);
+    this.infoPanel.update(this.focus, this.game.playerShips, this.game.computerShips);
   }
   private handlePointerDownSelection() {
     const downPoint = this.input.consumePointerDown();

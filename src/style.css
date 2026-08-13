@@ -26,8 +26,10 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .info-industry-name { color: #d0d8e4; flex: 1; white-space: nowrap; overflow: hidden; }
 .info-industry-state { color: #8a94a4; font-size: .72rem; white-space: nowrap; }
 .info-fleet-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .15rem 0; }
-.info-fleet-name { color: #d0d8e4; }
+.info-fleet-sprite { flex: none; width: 20px; height: 20px; }
+.info-fleet-name { color: #d0d8e4; flex: 1; }
 .info-fleet-count { color: #8a94a4; font-variant-numeric: tabular-nums; }
+.info-fleet-state { color: #6a8ab6; font-size: .68rem; }
 .sell-button { pointer-events: auto; border: 1px solid #654040; background: #2a1820; color: #ffb0b0; font-size: .68rem; padding: .15rem .4rem; border-radius: .3rem; cursor: pointer; }
 .sell-button:active { background: #3a2230; }
 .remove-target-button { pointer-events: auto; border: 1px solid #654040; background: #2a1820; color: #ffb0b0; font-size: .72rem; padding: .25rem .5rem; border-radius: .3rem; cursor: pointer; margin-bottom: .35rem; }

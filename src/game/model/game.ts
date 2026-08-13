@@ -2,6 +2,8 @@ import { ColonizerIndustry } from './colonizer-industry.ts';
 import { Collector } from './collector.ts';
 import { GameConstants } from '../game-constants.ts';
 import { Extractor } from './extractor.ts';
+import { BomberIndustry } from './bomber-industry.ts';
+import { HunterIndustry } from './hunter-industry.ts';
 import { IndustryConstruction } from './industry.ts';
 import { Owner, RandomSource } from './owner.ts';
 import { Planet } from './planet.ts';
@@ -50,10 +52,15 @@ export class Game {
     this.space.update(dt);
     this.firePlanetaryDefenseGuns();
     const uncontested = this.space.getPlanetsThatBelongTo(Owner.None);
+    const playerPlanets = this.space.getPlanetsThatBelongTo(Owner.Player);
     const maxJump = GameConstants.Ship.MaxEnergy / GameConstants.Ship.TravelCostPerDistance;
     this.space.getPlanetsThatBelongTo(Owner.Computer).forEach((planet) => {
-      if (planet.getTarget() === planet || planet.getTarget().hasFactories()) {
-        const reachable = uncontested.filter((target) => planet.centerPosition.distanceTo(target.centerPosition) <= maxJump);
+      const target = planet.getTarget();
+      const needRetarget = target === planet
+        || (target.getOwner() === Owner.Computer && target.hasFactories());
+      if (needRetarget) {
+        const targets = [...uncontested, ...playerPlanets];
+        const reachable = targets.filter((t) => planet.centerPosition.distanceTo(t.centerPosition) <= maxJump);
         if (reachable.length) planet.setTarget(reachable[Math.floor(this.random() * reachable.length)], Owner.Computer);
       }
       this.buildComputerEconomy(planet);
@@ -89,8 +96,13 @@ export class Game {
       try { build(); return; } catch { /* not enough material or no free slot */ }
     }
 
-    if (this.random() < GameConstants.Computer.PdcBuildChance) {
-      try { planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer); } catch { /* no free slot */ }
+    if (this.random() < GameConstants.Computer.CombatBuildChance) {
+      const roll = Math.floor(this.random() * 3);
+      try {
+        if (roll === 0) planet.buildIndustry(new PlanetaryDefenseGun(), Owner.Computer);
+        else if (roll === 1) planet.buildIndustry(new HunterIndustry(this.computerShips), Owner.Computer);
+        else planet.buildIndustry(new BomberIndustry(this.computerShips), Owner.Computer);
+      } catch { /* no free slot */ }
     }
   }
 }

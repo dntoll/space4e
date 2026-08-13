@@ -521,6 +521,21 @@ export class Renderer {
     ctx.drawImage(this.sprites, index * 256, 0, 256, 256, -size * 2, -size * 2, size * 4, size * 4);
     ctx.restore();
   }
+  drawShipIcon(canvas: HTMLCanvasElement, ship: Ship, owner: Owner) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const index = this.shipSpriteIndex(ship);
+    const w = canvas.width;
+    const h = canvas.height;
+    const size = Math.min(w, h) / 4;
+    ctx.clearRect(0, 0, w, h);
+    if (index === undefined || !this.spritesReady) return;
+    const rowY = owner === Owner.Player ? 512 : 768;
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.drawImage(this.sprites, index * 512, rowY, 512, 256, -size * 2, -size, size * 4, size * 2);
+    ctx.restore();
+  }
   drawFreeSlotIcon(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
