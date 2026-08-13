@@ -163,3 +163,4 @@ according to the same principles.
 | Planetary Defense Gun (fires at orbiting ships, blocks hostile Colonizer landing) | Implemented |
 | Colonizer landing blocked only by Planetary Defense Guns (not by factories) | Implemented |
 | Bombers/Fighters can shoot Planetary Defense Guns | Implemented |
+| Fog of War (planets see 0.4, ships 0.1; Undiscovered/Revealing/Unseen/Seen; gradual planet reveal; revealed space stays revealed; both sides; planets spawn within 0.4 of a neighbour; no unknown targets) | Implemented |

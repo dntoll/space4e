@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameConstants } from '../game-constants.ts';
-import { Bomber, BomberIndustry, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, HunterIndustry, IndustryConstruction, IndustryOrder, Owner, Planet, PlanetInventory, PlanetaryDefenseGun, Position, Ship, Space, Spaceport } from './index.ts';
+import { Bomber, BomberIndustry, Colonizer, ColonizerIndustry, Collector, Direction, Extractor, FreeIndustry, FreightShip, Game, Hunter, HunterIndustry, IndustryConstruction, IndustryOrder, Owner, Planet, PlanetInventory, PlanetaryDefenseGun, Position, Ship, Space, Spaceport, Visibility, FogOfWar } from './index.ts';
 
 describe('model geometry', () => {
   it('normalizes directions and turns the shortest way', () => {
@@ -75,6 +75,18 @@ describe('game world', () => {
     expect(space.planets).toHaveLength(GameConstants.Space.NumPlanets);
     expect(space.getPlanetsThatBelongTo(Owner.Player)).toHaveLength(1);
     expect(space.getPlanetsThatBelongTo(Owner.Computer)).toHaveLength(1);
+  });
+  it('keeps every planet within the fog discoverability distance of a neighbour', () => {
+    let seed = 23;
+    const random = () => { seed = (seed * 1103515245 + 12345) % 2147483647; return seed / 2147483647; };
+    const space = new Space(random);
+    for (const planet of space.planets) {
+      const nearest = space.planets
+        .filter((p) => p !== planet)
+        .map((p) => planet.centerPosition.distanceTo(p.centerPosition))
+        .sort((a, b) => a - b)[0];
+      expect(nearest).toBeLessThanOrEqual(GameConstants.Space.MaxNeighborDistance);
+    }
   });
   it('prevents building on a full planet', () => {
     const planet = new Planet(new Position(0, 0), GameConstants.Space.MinPlanetRadius);
@@ -807,5 +819,125 @@ describe('planetary defense guns', () => {
     for (let i = 0; i < 30 && hunter.isAlive(); i += 1) game.update(.1);
 
     expect(hunter.isAlive()).toBe(false);
+  });
+});
+
+describe('fog of war', () => {
+  it('marks only the starting planet as Seen at construction', () => {
+    const a = new Planet(new Position(0, 0), .05);
+    a.setOwner(Owner.Player);
+    const b = new Planet(new Position(.35, 0), .05);
+    const c = new Planet(new Position(2, 0), .05);
+    const fog = new FogOfWar([a, b, c], [a]);
+    expect(fog.getVisibility(a)).toBe(Visibility.Seen);
+    expect(fog.getVisibility(b)).toBe(Visibility.Undiscovered);
+    expect(fog.getVisibility(c)).toBe(Visibility.Undiscovered);
+    expect(fog.getLastKnownOwner(a)).toBe(Owner.Player);
+  });
+
+  it('reveals planets within planet vision radius after an update', () => {
+    const a = new Planet(new Position(0, 0), .05);
+    a.setOwner(Owner.Player);
+    const b = new Planet(new Position(.35, 0), .05);
+    const c = new Planet(new Position(2, 0), .05);
+    const fog = new FogOfWar([a, b, c], [a]);
+    fog.update(GameConstants.FogOfWar.RevealDuration, [a], []);
+    expect(fog.getVisibility(a)).toBe(Visibility.Seen);
+    expect(fog.getVisibility(b)).toBe(Visibility.Seen);
+    expect(fog.getVisibility(c)).toBe(Visibility.Undiscovered);
+  });
+
+  it('reveals planets within ship vision radius', () => {
+    const a = new Planet(new Position(0, 0), .05);
+    a.setOwner(Owner.Player);
+    const far = new Planet(new Position(2, 0), .05);
+    const fog = new FogOfWar([a, far], [a]);
+    const scout = new Hunter(new Position(1.95, 0));
+    fog.update(GameConstants.FogOfWar.RevealDuration, [a], [scout]);
+    expect(fog.getVisibility(far)).toBe(Visibility.Seen);
+  });
+
+  it('grows reveal gradually and holds progress when vision is lost', () => {
+    const a = new Planet(new Position(0, 0), .05);
+    a.setOwner(Owner.Player);
+    const b = new Planet(new Position(.35, 0), .05);
+    const fog = new FogOfWar([a, b], [a]);
+    fog.update(GameConstants.FogOfWar.RevealDuration / 2, [a], []);
+    expect(fog.getRevealProgress(b)).toBeCloseTo(0.5, 5);
+    expect(fog.getVisibility(b)).toBe(Visibility.Revealing);
+    expect(fog.isDiscovered(b)).toBe(true);
+    expect(fog.getLastKnownOwner(b)).toBeUndefined();
+
+    fog.update(0, [], []);
+    expect(fog.getRevealProgress(b)).toBeCloseTo(0.5, 5);
+    expect(fog.getVisibility(b)).toBe(Visibility.Unseen);
+  });
+
+  it('only records the last known owner once a planet is fully revealed', () => {
+    const a = new Planet(new Position(0, 0), .05);
+    a.setOwner(Owner.Player);
+    const b = new Planet(new Position(.35, 0), .05);
+    b.setOwner(Owner.Computer);
+    const fog = new FogOfWar([a, b], [a]);
+    fog.update(GameConstants.FogOfWar.RevealDuration, [a], []);
+    expect(fog.getVisibility(b)).toBe(Visibility.Seen);
+    expect(fog.getLastKnownOwner(b)).toBe(Owner.Computer);
+
+    b.setOwner(Owner.Player);
+    fog.update(0, [], []);
+    expect(fog.getVisibility(b)).toBe(Visibility.Unseen);
+    expect(fog.getLastKnownOwner(b)).toBe(Owner.Computer);
+  });
+
+  it('demotes Seen to Unseen when vision is lost and keeps the last known owner', () => {
+    const a = new Planet(new Position(0, 0), .05);
+    a.setOwner(Owner.Player);
+    const b = new Planet(new Position(.35, 0), .05);
+    b.setOwner(Owner.Computer);
+    const fog = new FogOfWar([a, b], [a]);
+    fog.update(GameConstants.FogOfWar.RevealDuration, [a], []);
+    expect(fog.getVisibility(b)).toBe(Visibility.Seen);
+    expect(fog.getLastKnownOwner(b)).toBe(Owner.Computer);
+
+    b.setOwner(Owner.Player);
+    fog.update(0, [], []);
+    expect(fog.getVisibility(b)).toBe(Visibility.Unseen);
+    expect(fog.getLastKnownOwner(b)).toBe(Owner.Computer);
+  });
+
+  it('reports enemy ship visibility based on vision radius', () => {
+    const a = new Planet(new Position(0, 0), .05);
+    a.setOwner(Owner.Player);
+    const fog = new FogOfWar([a], [a]);
+    fog.update(GameConstants.FogOfWar.RevealDuration, [a], []);
+    const close = new Hunter(new Position(.05, 0));
+    const far = new Hunter(new Position(2, 0));
+    expect(fog.isShipVisible(close)).toBe(true);
+    expect(fog.isShipVisible(far)).toBe(false);
+  });
+
+  it('knows only the starting planet at construction and reveals its neighbour over time', () => {
+    const game = new Game(Math.random);
+    const playerStart = game.space.getPlanetsThatBelongTo(Owner.Player)[0];
+    expect(game.playerFog.isSeen(playerStart)).toBe(true);
+    const nearest = game.space.planets
+      .filter((p) => p !== playerStart)
+      .map((p) => ({ p, d: playerStart.centerPosition.distanceTo(p.centerPosition) }))
+      .sort((x, y) => x.d - y.d)[0];
+    expect(nearest.d).toBeLessThanOrEqual(GameConstants.FogOfWar.PlanetVisionRadius);
+    expect(game.playerFog.isDiscovered(nearest.p)).toBe(false);
+    game.update(GameConstants.FogOfWar.RevealDuration);
+    expect(game.playerFog.isSeen(nearest.p)).toBe(true);
+  });
+
+  it('never lets the computer target an undiscovered planet', () => {
+    const game = new Game(Math.random);
+    for (let i = 0; i < 100; i += 1) game.update(.1);
+    for (const planet of game.space.getPlanetsThatBelongTo(Owner.Computer)) {
+      const target = planet.getTarget();
+      if (target !== planet) {
+        expect(game.computerFog.isDiscovered(target)).toBe(true);
+      }
+    }
   });
 });

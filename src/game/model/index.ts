@@ -21,4 +21,6 @@ export { Spaceport } from './spaceport.ts';
 export { PlanetaryDefenseGun } from './planetary-defense-gun.ts';
 export { Planet } from './planet.ts';
 export { Space } from './space.ts';
+export { Visibility } from './fog-of-war.ts';
+export { FogOfWar } from './fog-of-war.ts';
 export { Game } from './game.ts';

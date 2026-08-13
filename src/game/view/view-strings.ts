@@ -76,6 +76,9 @@ export const ViewStrings = {
     ownerPlayer: 'Player',
     ownerComputer: 'Computer',
     ownerNone: 'Uninhabited',
+    unseen: 'Unseen',
+    noLiveInformation: 'No live information',
+    revealing: (pct: number) => `Revealing ${pct}%`,
     panelMissing: 'Info panel missing',
   },
 };

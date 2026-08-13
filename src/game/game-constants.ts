@@ -12,12 +12,19 @@ export const GameConstants = {
     NumPlanets: 20,
     SpaceRadius: 1.5,
     MinPlanetSpacing: 0.3,
+    MaxNeighborDistance: 0.4,
     MinPlanetRadius: 0.04,
     PlanetRadiusVariance: 0.05,
     UnminedOreMin: 20,
     UnminedOreRange: 100,
     CollectionPotentialMin: 0.05,
     CollectionPotentialRange: 0.35,
+  },
+
+  FogOfWar: {
+    ShipVisionRadius: 0.1,
+    PlanetVisionRadius: 0.4,
+    RevealDuration: 2,
   },
 
   StartingPlanet: {

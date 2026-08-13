@@ -2,6 +2,7 @@ import { ColonizerIndustry } from './colonizer-industry.ts';
 import { Collector } from './collector.ts';
 import { GameConstants } from '../game-constants.ts';
 import { Extractor } from './extractor.ts';
+import { FogOfWar } from './fog-of-war.ts';
 import { BomberIndustry } from './bomber-industry.ts';
 import { HunterIndustry } from './hunter-industry.ts';
 import { IndustryConstruction } from './industry.ts';
@@ -16,6 +17,8 @@ export class Game {
   readonly playerShips: Ship[] = [];
   readonly computerShips: Ship[] = [];
   readonly shotEffects: ShotEffect[] = [];
+  readonly playerFog: FogOfWar;
+  readonly computerFog: FogOfWar;
   private readonly random: RandomSource;
 
   constructor(random?: RandomSource) {
@@ -29,6 +32,9 @@ export class Game {
       planet.placeSpaceport(this.computerShips, Owner.Computer);
       this.seedStartingIndustry(planet, this.computerShips);
     });
+    this.playerFog = new FogOfWar(this.space.planets, this.space.getPlanetsThatBelongTo(Owner.Player));
+    this.computerFog = new FogOfWar(this.space.planets, this.space.getPlanetsThatBelongTo(Owner.Computer));
+    this.updateFog(0);
   }
 
   private seedStartingIndustry(planet: Planet, ships: Ship[]) {
@@ -51,13 +57,15 @@ export class Game {
     this.computerShips.forEach((ship) => { ship.spreadAlongOrbit(this.computerShips); ship.update(dt); });
     this.space.update(dt);
     this.firePlanetaryDefenseGuns();
-    const uncontested = this.space.getPlanetsThatBelongTo(Owner.None);
-    const playerPlanets = this.space.getPlanetsThatBelongTo(Owner.Player);
+    this.updateFog(dt);
+    const uncontested = this.space.getPlanetsThatBelongTo(Owner.None).filter((planet) => this.computerFog.isDiscovered(planet));
+    const playerPlanets = this.space.getPlanetsThatBelongTo(Owner.Player).filter((planet) => this.computerFog.isDiscovered(planet));
     const maxJump = GameConstants.Ship.MaxEnergy / GameConstants.Ship.TravelCostPerDistance;
     this.space.getPlanetsThatBelongTo(Owner.Computer).forEach((planet) => {
       const target = planet.getTarget();
       const needRetarget = target === planet
-        || (target.getOwner() === Owner.Computer && target.hasFactories());
+        || (target.getOwner() === Owner.Computer && target.hasFactories())
+        || !this.computerFog.isDiscovered(target);
       if (needRetarget) {
         const targets = [...uncontested, ...playerPlanets];
         const reachable = targets.filter((t) => planet.centerPosition.distanceTo(t.centerPosition) <= maxJump);
@@ -65,6 +73,11 @@ export class Game {
       }
       this.buildComputerEconomy(planet);
     });
+  }
+
+  private updateFog(dt: number) {
+    this.playerFog.update(dt, this.space.getPlanetsThatBelongTo(Owner.Player), this.playerShips);
+    this.computerFog.update(dt, this.space.getPlanetsThatBelongTo(Owner.Computer), this.computerShips);
   }
 
   private firePlanetaryDefenseGuns() {

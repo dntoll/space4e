@@ -29,6 +29,7 @@ export class Controller {
     ];
     this.infoPanel = new InfoPanel(
       this.renderer,
+      this.game.playerFog,
       (index, anchor) => {
         if (this.focus) this.openBuildMenu(this.focus, index, anchor);
       },

@@ -20,10 +20,13 @@ import {
   Position,
   Ship,
   Spaceport,
+  Visibility,
 } from '../model/index.ts';
+import type { FogOfWar } from '../model/index.ts';
 import spritesUrl from '../../../res/sprites.png';
 import { computeWorldBounds, WorldBounds } from './world-bounds.ts';
 import { ownerColor } from './owner-colors.ts';
+import { ExploredMask } from './explored-mask.ts';
 
 export class Camera {
   private focus = new Position(0, 0);
@@ -60,6 +63,7 @@ export class Camera {
 }
 
 export class Renderer {
+  private static readonly FogColor = '#1c2230';
   private camera = new Camera(1, 1);
   private cameraFocus?: Position;
   private panPointer?: { id: number; x: number; y: number };
@@ -68,8 +72,12 @@ export class Renderer {
   private readonly sprites = new Image();
   private spritesReady = false;
   private readonly bounds: WorldBounds;
+  private readonly fogCanvas: HTMLCanvasElement;
+  private readonly exploredMask: ExploredMask;
   constructor(private canvas: HTMLCanvasElement, private game: Game) {
     this.bounds = computeWorldBounds(game.space.planets.map((planet) => planet.centerPosition));
+    this.fogCanvas = document.createElement('canvas');
+    this.exploredMask = new ExploredMask(this.bounds);
     this.resize();
     this.sprites.onload = () => { this.spritesReady = true; };
     this.sprites.src = spritesUrl;
@@ -116,6 +124,8 @@ export class Renderer {
   private resize() {
     const ratio = window.devicePixelRatio || 1; const rect = this.canvas.getBoundingClientRect();
     this.canvas.width = Math.max(1, Math.floor(rect.width * ratio)); this.canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+    this.fogCanvas.width = this.canvas.width;
+    this.fogCanvas.height = this.canvas.height;
     this.camera = new Camera(rect.width, rect.height);
     const min = this.minZoom();
     if (this.camera.getZoom() < min) this.camera.changeZoom(0, min);
@@ -125,11 +135,50 @@ export class Renderer {
   render(focus?: Planet) {
     const ctx = this.canvas.getContext('2d'); if (!ctx) return;
     const ratio = window.devicePixelRatio || 1; ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.fillStyle = '#080b12'; ctx.fillRect(0, 0, this.camera.width, this.camera.height);
-    this.game.space.planets.forEach((planet) => this.drawTargetArrow(ctx, planet));
-    this.game.space.planets.forEach((planet) => this.drawPlanet(ctx, planet, focus));
-    this.game.shotEffects.forEach((effect) => this.drawShotEffect(ctx, effect.source?.center ?? effect.from, effect.to, effect.remaining, effect.kind));
+    const fog = this.game.playerFog;
+    this.game.space.planets.forEach((planet) => this.drawTargetArrow(ctx, planet, fog));
+    this.game.space.planets.forEach((planet) => this.drawPlanet(ctx, planet, focus, fog));
+    this.game.shotEffects.forEach((effect) => {
+      const from = effect.source?.center ?? effect.from;
+      if (fog.isPositionVisible(from) || fog.isPositionVisible(effect.to)) {
+        this.drawShotEffect(ctx, from, effect.to, effect.remaining, effect.kind);
+      }
+    });
     this.game.playerShips.filter((ship) => ship.isAlive()).forEach((ship) => this.drawShip(ctx, ship, Owner.Player));
-    this.game.computerShips.filter((ship) => ship.isAlive()).forEach((ship) => this.drawShip(ctx, ship, Owner.Computer));
+    this.game.computerShips.filter((ship) => ship.isAlive() && fog.isShipVisible(ship)).forEach((ship) => this.drawShip(ctx, ship, Owner.Computer));
+    this.drawFogOverlay(ctx, fog);
+    this.game.space.planets.forEach((planet) => this.drawFoggedPlanet(ctx, planet, focus, fog));
+  }
+
+  private drawFogOverlay(ctx: CanvasRenderingContext2D, fog: FogOfWar) {
+    this.exploredMask.reveal(fog.visionSources());
+    const fctx = this.fogCanvas.getContext('2d');
+    if (!fctx) return;
+    const ratio = window.devicePixelRatio || 1;
+    fctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    fctx.globalCompositeOperation = 'source-over';
+    fctx.clearRect(0, 0, this.camera.width, this.camera.height);
+    fctx.fillStyle = Renderer.FogColor;
+    fctx.fillRect(0, 0, this.camera.width, this.camera.height);
+    fctx.globalCompositeOperation = 'destination-out';
+    this.applyCameraTransform(fctx, ratio);
+    const b = this.exploredMask.getBounds();
+    fctx.drawImage(this.exploredMask.getCanvas(), b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+    fctx.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.fogCanvas, 0, 0);
+    ctx.restore();
+  }
+
+  private applyCameraTransform(ctx: CanvasRenderingContext2D, ratio: number) {
+    const focus = this.camera.getFocus();
+    const scale = this.camera.width * this.camera.getZoom();
+    ctx.setTransform(
+      ratio * scale, 0, 0, ratio * scale,
+      ratio * (this.camera.width / 2 - focus.x * scale),
+      ratio * (this.camera.height / 2 - focus.y * scale),
+    );
   }
   focusOn(planet: Planet) {
     this.cameraFocus = new Position(
@@ -165,10 +214,13 @@ export class Renderer {
     const rect = this.canvas.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
-  private drawTargetArrow(ctx: CanvasRenderingContext2D, planet: Planet) {
+  private drawTargetArrow(ctx: CanvasRenderingContext2D, planet: Planet, fog: FogOfWar) {
+    if (!fog.isDiscovered(planet)) return;
     const target = planet.getOwner() === Owner.Player && planet.getTarget() !== planet ? planet.getTarget() : undefined;
     const futureTarget = planet.getPlayerFutureTarget();
     if (!target && !futureTarget) return;
+    if (target && !fog.isDiscovered(target)) return;
+    if (futureTarget && !fog.isDiscovered(futureTarget)) return;
     this.drawArrow(ctx, planet, target ?? futureTarget!, target !== undefined, '#707070');
   }
   private drawArrow(ctx: CanvasRenderingContext2D, source: Planet, target: Planet, solid: boolean, color: string) {
@@ -205,8 +257,10 @@ export class Renderer {
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
-  private drawPlanet(ctx: CanvasRenderingContext2D, planet: Planet, focus?: Planet) {
+  private drawPlanet(ctx: CanvasRenderingContext2D, planet: Planet, focus: Planet | undefined, fog: FogOfWar) {
+    if (fog.getVisibility(planet) !== Visibility.Seen) return;
     const center = this.camera.modelToView(planet.centerPosition); const radius = this.camera.radius(planet.radius);
+
     ctx.fillStyle = ownerColor(planet.getOwner()); ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
     if (planet.hasSpaceport()) {
       ctx.strokeStyle = '#a0a0a0';
@@ -276,6 +330,38 @@ export class Renderer {
       }
     });
     this.drawInventory(ctx, planet, center, radius);
+  }
+
+  private drawFoggedPlanet(ctx: CanvasRenderingContext2D, planet: Planet, focus: Planet | undefined, fog: FogOfWar) {
+    const visibility = fog.getVisibility(planet);
+    if (visibility === Visibility.Undiscovered || visibility === Visibility.Seen) return;
+    const center = this.camera.modelToView(planet.centerPosition);
+    const radius = this.camera.radius(planet.radius);
+    const progress = fog.getRevealProgress(planet);
+    const fullyRevealed = progress >= 1;
+    const inVision = visibility === Visibility.Revealing;
+    const color = fullyRevealed
+      ? ownerColor(fog.getLastKnownOwner(planet) ?? Owner.None)
+      : '#9aa0b0';
+    const alpha = fullyRevealed
+      ? 0.45
+      : inVision ? Math.max(0.15, progress) : Math.max(0.1, 0.3 * progress);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(center.x, center.y, radius + 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    if (inVision && !fullyRevealed) {
+      ctx.strokeStyle = '#c0c8e0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(center.x, center.y, radius + 5, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (focus === planet) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
   }
 
   private drawInventory(
@@ -581,8 +667,10 @@ export class Renderer {
     };
   }
   getPlanetAt(point: { x: number; y: number }) {
+    const fog = this.game.playerFog;
     for (let index = this.game.space.planets.length - 1; index >= 0; index -= 1) {
       const planet = this.game.space.planets[index];
+      if (!fog.isDiscovered(planet)) continue;
       const visualRadius = this.camera.radius(planet.radius);
       const visualPosition = this.camera.modelToView(planet.centerPosition);
       const centerX = visualPosition.x;
@@ -592,7 +680,9 @@ export class Renderer {
     return undefined;
   }
   getSlotAt(point: { x: number; y: number }) {
+    const fog = this.game.playerFog;
     for (const planet of this.game.space.planets) {
+      if (!fog.isSeen(planet)) continue;
       for (let index = 0; index < planet.parts.length; index += 1) {
         const position = this.industryDrawCenter(planet, index);
         const size = this.camera.radius(planet.radius) / 4 * 0.7;

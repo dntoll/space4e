@@ -1,4 +1,4 @@
-import { FreeIndustry, Industry, Owner, Planet, Ship } from '../model/index.ts';
+import { FreeIndustry, FogOfWar, Industry, Owner, Planet, Ship, Visibility } from '../model/index.ts';
 import { GameConstants } from '../game-constants.ts';
 import { ViewStrings } from './view-strings.ts';
 import { Renderer } from './renderer.ts';
@@ -10,6 +10,7 @@ export class InfoPanel {
   private sized = false;
   constructor(
     private readonly renderer: Renderer,
+    private readonly fog: FogOfWar,
     private readonly onPickSlot: (index: number, anchor: { x: number; y: number }) => void,
     private readonly onSell: (index: number) => void,
     private readonly onRemoveTarget: () => void,
@@ -26,9 +27,11 @@ export class InfoPanel {
       return;
     }
     this.root.innerHTML = this.render(planet, playerShips, computerShips);
-    this.drawSprites(planet);
-    this.drawShipSprites(planet, playerShips, Owner.Player);
-    this.drawShipSprites(planet, computerShips, Owner.Computer);
+    if (this.fog.isSeen(planet)) {
+      this.drawSprites(planet);
+      this.drawShipSprites(planet, playerShips, Owner.Player);
+      this.drawShipSprites(planet, computerShips, Owner.Computer);
+    }
     this.ensureSize();
   }
 
@@ -77,6 +80,9 @@ export class InfoPanel {
       ViewStrings.InfoPanel.ownerNone,
       ViewStrings.InfoPanel.ownerComputer,
       ViewStrings.InfoPanel.ownerPlayer,
+      ViewStrings.InfoPanel.unseen,
+      ViewStrings.InfoPanel.noLiveInformation,
+      ViewStrings.InfoPanel.revealing(100),
     ];
 
     const measurer = document.createElement('span');
@@ -123,6 +129,10 @@ export class InfoPanel {
   }
 
   private render(planet: Planet, playerShips: Ship[], computerShips: Ship[]): string {
+    const visibility = this.fog.getVisibility(planet);
+    if (visibility !== Visibility.Seen) {
+      return this.renderFogged(planet, visibility);
+    }
     const inv = planet.inventory;
     const maxValue = GameConstants.Inventory.Capacity;
     const resources = [
@@ -158,6 +168,27 @@ export class InfoPanel {
       ${spaceport}
       ${this.renderShips(ViewStrings.InfoPanel.fleet, playerShips, planet, Owner.Player)}
       ${this.renderShips(ViewStrings.InfoPanel.enemy, computerShips, planet, Owner.Computer)}
+    `;
+  }
+
+  private renderFogged(planet: Planet, visibility: Visibility): string {
+    const progress = this.fog.getRevealProgress(planet);
+    const fullyRevealed = progress >= 1;
+    const knownOwner = fullyRevealed ? (this.fog.getLastKnownOwner(planet) ?? Owner.None) : Owner.None;
+    const ownerName = fullyRevealed ? this.ownerName(knownOwner) : ViewStrings.InfoPanel.unknown;
+    const badgeColor = ownerBadgeColor(knownOwner);
+    const hasFutureTarget = planet.getPlayerFutureTarget() !== undefined;
+    const removeTargetButton = hasFutureTarget
+      ? `<button class="remove-target-button" data-remove-target>${ViewStrings.InfoPanel.removeTarget}</button>`
+      : '';
+    const statusLabel = fullyRevealed
+      ? `${ViewStrings.InfoPanel.unseen} - ${ViewStrings.InfoPanel.noLiveInformation}`
+      : ViewStrings.InfoPanel.revealing(Math.round(progress * 100));
+    return `
+      <h2>${ViewStrings.InfoPanel.title}</h2>
+      <span class="info-owner" style="background:${badgeColor};opacity:0.6">${ownerName}</span>
+      <span class="info-unseen">${statusLabel}</span>
+      ${removeTargetButton}
     `;
   }
 

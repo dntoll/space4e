@@ -11,10 +11,6 @@ export class Space {
 
   private createSpace(random: RandomSource) {
     const ret = new Array<Planet>();
-    let indexOfTopPlanet = 0;
-    let yPosOfTopPlanet = -GameConstants.Space.SpaceRadius * 0.75;
-    let indexOfBottomPlanet = 1;
-    let yPosOfBottomPlanet = GameConstants.Space.SpaceRadius * 0.75;
 
     while (ret.length < GameConstants.Space.NumPlanets) {
       const position = new Position(
@@ -25,13 +21,9 @@ export class Space {
       if (ret.some((planet) => planet.centerPosition.distanceTo(position) < GameConstants.Space.MinPlanetSpacing)) {
         continue;
       }
-      if (position.y < yPosOfTopPlanet) {
-        yPosOfTopPlanet = position.y;
-        indexOfTopPlanet = ret.length;
-      }
-      if (position.y > yPosOfBottomPlanet) {
-        yPosOfBottomPlanet = position.y;
-        indexOfBottomPlanet = ret.length;
+      // Every planet must stay close enough to a neighbour to remain discoverable through fog of war.
+      if (ret.length > 0 && !ret.some((planet) => planet.centerPosition.distanceTo(position) <= GameConstants.Space.MaxNeighborDistance)) {
+        continue;
       }
 
       const radius = random() * GameConstants.Space.PlanetRadiusVariance + GameConstants.Space.MinPlanetRadius;
@@ -40,6 +32,9 @@ export class Space {
       planet.inventory.collectionPotential = GameConstants.Space.CollectionPotentialMin + random() * GameConstants.Space.CollectionPotentialRange;
       ret.push(planet);
     }
+
+    const indexOfTopPlanet = this.indexOfExtremeY(ret, (a, b) => a < b);
+    const indexOfBottomPlanet = this.indexOfExtremeY(ret, (a, b) => a > b, indexOfTopPlanet);
 
     const playerPlanet = ret[indexOfTopPlanet];
     playerPlanet.setOwner(Owner.Player);
@@ -50,6 +45,15 @@ export class Space {
     this.seedStartingPlanet(computerPlanet);
 
     return ret;
+  }
+
+  private indexOfExtremeY(planets: Planet[], isMoreExtreme: (candidate: number, current: number) => boolean, exclude?: number) {
+    let chosen = exclude === 0 && planets.length > 1 ? 1 : 0;
+    for (let i = 0; i < planets.length; i += 1) {
+      if (i === exclude) continue;
+      if (isMoreExtreme(planets[i].centerPosition.y, planets[chosen].centerPosition.y)) chosen = i;
+    }
+    return chosen;
   }
 
   private seedStartingPlanet(planet: Planet) {
