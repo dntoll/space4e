@@ -6,6 +6,7 @@ export class Hunter extends Ship {
 
   private readonly targettableDistance = GameConstants.Hunter.TargettableDistance;
   protected override get turnSpeedDegrees() { return GameConstants.Hunter.TurnSpeedDegrees; }
+  override get orbitRadiusMultiplier() { return GameConstants.Hunter.OrbitRadiusMultiplier; }
 
   updateBehavior(dt: number, _friends: Ship[], opponents: Ship[]): ShotEffect | undefined {
     if (!this.isAlive() || !this.home)
@@ -35,7 +36,7 @@ export class Hunter extends Ship {
         return undefined;
       }
       //orbit around target planet if close enough
-      this.orbitAroundPlanet(targetPlanet, targetPlanet.radius * GameConstants.Ship.OrbitRadiusMultiplier);
+      this.orbitAroundPlanet(targetPlanet, targetPlanet.radius * this.orbitRadiusMultiplier);
 
       //shoot hostile planetary defense guns in range
       if (targetPlanet.getOwner() !== this.home.getOwner()) {

@@ -46,6 +46,8 @@ export class Input {
     });
   }
   isPointerDown() { return this.pointerDown; }
+  isDragging() { return this.pointerDown && this.pointerMoved; }
+  getMouse() { return { ...this.mouse }; }
   consumePointerDown(): { x: number; y: number } | undefined {
     if (!this.pointerJustDown) return undefined;
     this.pointerJustDown = false;

@@ -62,8 +62,11 @@ export class Camera {
   getZoom() { return this.zoom; }
 }
 
+export type DragLine = { source: Planet; mouse: { x: number; y: number } };
+
 export class Renderer {
   private static readonly FogColor = '#1c2230';
+  private static readonly DragLineColor = '#707070';
   private camera = new Camera(1, 1);
   private cameraFocus?: Position;
   private panPointer?: { id: number; x: number; y: number };
@@ -132,7 +135,7 @@ export class Renderer {
     if (this.cameraFocus) this.camera.setFocus(this.cameraFocus);
     this.clampFocus();
   }
-  render(focus?: Planet) {
+  render(focus?: Planet, dragLine?: DragLine) {
     const ctx = this.canvas.getContext('2d'); if (!ctx) return;
     const ratio = window.devicePixelRatio || 1; ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.fillStyle = '#080b12'; ctx.fillRect(0, 0, this.camera.width, this.camera.height);
     const fog = this.game.playerFog;
@@ -148,6 +151,7 @@ export class Renderer {
     this.game.computerShips.filter((ship) => ship.isAlive() && fog.isShipVisible(ship)).forEach((ship) => this.drawShip(ctx, ship, Owner.Computer));
     this.drawFogOverlay(ctx, fog);
     this.game.space.planets.forEach((planet) => this.drawFoggedPlanet(ctx, planet, focus, fog));
+    if (dragLine) this.drawDragLine(ctx, dragLine);
   }
 
   private drawFogOverlay(ctx: CanvasRenderingContext2D, fog: FogOfWar) {
@@ -253,6 +257,34 @@ export class Renderer {
     ctx.lineTo(arrowEnd.x - arrowSize * Math.cos(direction - Math.PI / 6), arrowEnd.y - arrowSize * Math.sin(direction - Math.PI / 6));
     ctx.moveTo(arrowEnd.x, arrowEnd.y);
     ctx.lineTo(arrowEnd.x - arrowSize * Math.cos(direction + Math.PI / 6), arrowEnd.y - arrowSize * Math.sin(direction + Math.PI / 6));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+  private drawDragLine(ctx: CanvasRenderingContext2D, dragLine: DragLine) {
+    const sourcePosition = this.camera.modelToView(dragLine.source.centerPosition);
+    const sourceRadius = this.camera.radius(dragLine.source.radius);
+    const direction = Math.atan2(
+      dragLine.mouse.y - sourcePosition.y,
+      dragLine.mouse.x - sourcePosition.x,
+    );
+    const start = {
+      x: sourcePosition.x + sourceRadius * Math.cos(direction),
+      y: sourcePosition.y + sourceRadius * Math.sin(direction),
+    };
+    const end = dragLine.mouse;
+    const arrowSize = 7;
+    ctx.strokeStyle = Renderer.DragLineColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - arrowSize * Math.cos(direction - Math.PI / 6), end.y - arrowSize * Math.sin(direction - Math.PI / 6));
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - arrowSize * Math.cos(direction + Math.PI / 6), end.y - arrowSize * Math.sin(direction + Math.PI / 6));
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;

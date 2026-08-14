@@ -11,26 +11,23 @@ export class Space {
 
   private createSpace(random: RandomSource) {
     const ret = new Array<Planet>();
+    const minSpacing = GameConstants.Space.MinPlanetSpacing;
+    const visionRadius = GameConstants.FogOfWar.PlanetVisionRadius;
+
+    const tooClose = (p: Position) => ret.some((planet) => planet.centerPosition.distanceTo(p) < minSpacing);
+
+    this.pushPlanet(ret, new Position(0, 0), random);
 
     while (ret.length < GameConstants.Space.NumPlanets) {
-      const position = new Position(
-        random() * GameConstants.Space.SpaceRadius * 2 - GameConstants.Space.SpaceRadius,
-        random() * GameConstants.Space.SpaceRadius * 2 - GameConstants.Space.SpaceRadius,
+      const parent = ret[Math.floor(random() * ret.length)];
+      const angle = random() * Math.PI * 2;
+      const distance = minSpacing + random() * (visionRadius - minSpacing);
+      const candidate = new Position(
+        parent.centerPosition.x + Math.cos(angle) * distance,
+        parent.centerPosition.y + Math.sin(angle) * distance,
       );
-
-      if (ret.some((planet) => planet.centerPosition.distanceTo(position) < GameConstants.Space.MinPlanetSpacing)) {
-        continue;
-      }
-      // Every planet must stay close enough to a neighbour to remain discoverable through fog of war.
-      if (ret.length > 0 && !ret.some((planet) => planet.centerPosition.distanceTo(position) <= GameConstants.Space.MaxNeighborDistance)) {
-        continue;
-      }
-
-      const radius = random() * GameConstants.Space.PlanetRadiusVariance + GameConstants.Space.MinPlanetRadius;
-      const planet = new Planet(position, radius);
-      planet.inventory.unminedOre = GameConstants.Space.UnminedOreMin + random() * GameConstants.Space.UnminedOreRange;
-      planet.inventory.collectionPotential = GameConstants.Space.CollectionPotentialMin + random() * GameConstants.Space.CollectionPotentialRange;
-      ret.push(planet);
+      if (tooClose(candidate)) continue;
+      this.pushPlanet(ret, candidate, random);
     }
 
     const indexOfTopPlanet = this.indexOfExtremeY(ret, (a, b) => a < b);
@@ -45,6 +42,14 @@ export class Space {
     this.seedStartingPlanet(computerPlanet);
 
     return ret;
+  }
+
+  private pushPlanet(ret: Planet[], position: Position, random: RandomSource) {
+    const radius = random() * GameConstants.Space.PlanetRadiusVariance + GameConstants.Space.MinPlanetRadius;
+    const planet = new Planet(position, radius);
+    planet.inventory.unminedOre = GameConstants.Space.UnminedOreMin + random() * GameConstants.Space.UnminedOreRange;
+    planet.inventory.collectionPotential = GameConstants.Space.CollectionPotentialMin + random() * GameConstants.Space.CollectionPotentialRange;
+    ret.push(planet);
   }
 
   private indexOfExtremeY(planets: Planet[], isMoreExtreme: (candidate: number, current: number) => boolean, exclude?: number) {

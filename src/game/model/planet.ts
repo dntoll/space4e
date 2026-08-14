@@ -77,10 +77,14 @@ export class Planet {
       this.centerPosition.y + Math.sin(angle) * this.radius * 1.25,
     );
   }
+  getSpaceportAngle() {
+    return -Math.PI / this.parts.length;
+  }
   getSpaceportSpawnPosition() {
+    const angle = this.getSpaceportAngle();
     return new Position(
-      this.centerPosition.x + this.radius * 1.25,
-      this.centerPosition.y,
+      this.centerPosition.x + Math.cos(angle) * this.radius * 1.25,
+      this.centerPosition.y + Math.sin(angle) * this.radius * 1.25,
     );
   }
   update(dt: number) {

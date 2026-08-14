@@ -34,7 +34,10 @@ export class Game {
     });
     this.playerFog = new FogOfWar(this.space.planets, this.space.getPlanetsThatBelongTo(Owner.Player));
     this.computerFog = new FogOfWar(this.space.planets, this.space.getPlanetsThatBelongTo(Owner.Computer));
-    this.updateFog(0);
+    const playerPlanets = this.space.getPlanetsThatBelongTo(Owner.Player);
+    const computerPlanets = this.space.getPlanetsThatBelongTo(Owner.Computer);
+    this.playerFog.update(GameConstants.FogOfWar.RevealDuration, playerPlanets, []);
+    this.computerFog.update(GameConstants.FogOfWar.RevealDuration, computerPlanets, []);
   }
 
   private seedStartingIndustry(planet: Planet, ships: Ship[]) {

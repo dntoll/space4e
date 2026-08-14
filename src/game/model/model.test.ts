@@ -85,8 +85,38 @@ describe('game world', () => {
         .filter((p) => p !== planet)
         .map((p) => planet.centerPosition.distanceTo(p.centerPosition))
         .sort((a, b) => a - b)[0];
-      expect(nearest).toBeLessThanOrEqual(GameConstants.Space.MaxNeighborDistance);
+      expect(nearest).toBeLessThanOrEqual(GameConstants.FogOfWar.PlanetVisionRadius);
     }
+  });
+  it('produces a connected planet graph', () => {
+    let seed = 23;
+    const random = () => { seed = (seed * 1103515245 + 12345) % 2147483647; return seed / 2147483647; };
+    const space = new Space(random);
+    const vision = GameConstants.FogOfWar.PlanetVisionRadius;
+    const reached = new Set<Planet>([space.planets[0]]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const planet of space.planets) {
+        if (reached.has(planet)) continue;
+        if ([...reached].some((r) => r.centerPosition.distanceTo(planet.centerPosition) <= vision)) {
+          reached.add(planet);
+          changed = true;
+        }
+      }
+    }
+    expect(reached.size).toBe(space.planets.length);
+  });
+  it('gives the player a starting planet with a discoverable neighbour', () => {
+    let seed = 23;
+    const random = () => { seed = (seed * 1103515245 + 12345) % 2147483647; return seed / 2147483647; };
+    const space = new Space(random);
+    const playerStart = space.getPlanetsThatBelongTo(Owner.Player)[0];
+    const nearest = space.planets
+      .filter((p) => p !== playerStart)
+      .map((p) => playerStart.centerPosition.distanceTo(p.centerPosition))
+      .sort((a, b) => a - b)[0];
+    expect(nearest).toBeLessThanOrEqual(GameConstants.FogOfWar.PlanetVisionRadius);
   });
   it('prevents building on a full planet', () => {
     const planet = new Planet(new Position(0, 0), GameConstants.Space.MinPlanetRadius);
@@ -193,19 +223,22 @@ describe('game world', () => {
 
     expect(target.hasFactories()).toBe(false);
   });
-  it('colonizes near the surface even if the colonizer is still moving', () => {
+  it('colonizes by entering orbit then reversing down to the surface', () => {
     const home = new Planet(new Position(.5, .5), .1);
     const target = new Planet(new Position(0, 0), .1);
     home.setOwner(Owner.Player);
     home.setTarget(target, Owner.Player);
 
-    const colonizer = new Colonizer(new Position(-.056, 0));
+    const colonizer = new Colonizer(new Position(-.25, 0));
     colonizer.setHome(home);
-    colonizer.orbitAround(target.centerPosition, .056);
-
+    colonizer.updateBehavior(.1);
     expect(colonizer.shipSpeed).toBeGreaterThan(0);
 
-    colonizer.updateBehavior(.1);
+    for (let i = 0; i < 1000 && colonizer.isAlive(); i += 1) {
+      colonizer.updateBehavior(.1);
+      colonizer.avoidPlanets([home, target]);
+      colonizer.update(.1);
+    }
 
     expect(target.getOwner()).toBe(Owner.Player);
     expect(colonizer.isAlive()).toBe(false);
@@ -229,7 +262,7 @@ describe('game world', () => {
     expect(colonizer.isAlive()).toBe(true);
 
     target.killFactory();
-    for (let i = 0; i < 200 && colonizer.isAlive(); i += 1) {
+    for (let i = 0; i < 1000 && colonizer.isAlive(); i += 1) {
       colonizer.updateBehavior(.1);
       colonizer.avoidPlanets([home, target]);
       colonizer.update(.1);
@@ -258,7 +291,7 @@ describe('game world', () => {
 
     target.killFactory();
     const orbitRadius = target.radius + GameConstants.PlanetaryDefenseGun.Range + GameConstants.Ship.ColonizerOrbitMargin;
-    for (let i = 0; i < 200 && colonizer.isAlive(); i += 1) {
+    for (let i = 0; i < 1000 && colonizer.isAlive(); i += 1) {
       colonizer.updateBehavior(.1);
       colonizer.avoidPlanets([home, target]);
       colonizer.update(.1);
@@ -285,7 +318,7 @@ describe('game world', () => {
     expect(ship.shipSpeed).toBeLessThan(initialSpeed);
     expect(ship.shipSpeed).toBeGreaterThanOrEqual(0);
   });
-  it('creates ships at the spaceport launch position', () => {
+  it('launches built ships from the spaceport straight out to orbit height', () => {
     const planet = new Planet(new Position(.2, .3), .1);
     const target = new Planet(new Position(.8, .8), .1);
     planet.setOwner(Owner.Player);
@@ -297,9 +330,16 @@ describe('game world', () => {
     planet.update(2.1);
     planet.update(3.1);
     expect(ships).toHaveLength(1);
-    const spawn = planet.getSpaceportSpawnPosition();
-    expect(ships[0].center.x).toBeCloseTo(spawn.x);
-    expect(ships[0].center.y).toBeCloseTo(spawn.y);
+    const spaceport = planet.getSpaceportSpawnPosition();
+    expect(ships[0].center.x).toBeCloseTo(spaceport.x);
+    expect(ships[0].center.y).toBeCloseTo(spaceport.y);
+    const orbitAltitude = planet.radius * GameConstants.Colonizer.OrbitRadiusMultiplier;
+    for (let i = 0; i < 50; i += 1) {
+      ships[0].updateBehavior(.1, ships, []);
+      ships[0].avoidPlanets([planet, target]);
+      ships[0].update(.1);
+    }
+    expect(ships[0].center.distanceTo(planet.centerPosition)).toBeGreaterThanOrEqual(orbitAltitude - 0.001);
   });
   it('leaves orbit when the home planet gets a new target', () => {
     const home = new Planet(new Position(0, 0), .1);
@@ -524,11 +564,18 @@ describe('economy and energy', () => {
     let seed = 42;
     const random = () => { seed = (seed * 1103515245 + 12345) % 2147483647; return seed / 2147483647; };
     const game = new Game(random);
-    const computerPlanet = game.space.getPlanetsThatBelongTo(Owner.Computer)[0];
+    const computerPlanet = new Planet(new Position(0, 0), GameConstants.Space.MinPlanetRadius + GameConstants.Space.PlanetRadiusVariance);
+    computerPlanet.setOwner(Owner.Computer);
+    computerPlanet.placeSpaceport(game.computerShips, Owner.Computer);
+    computerPlanet.parts[0] = new Extractor();
+    computerPlanet.parts[1] = new Collector();
+    computerPlanet.parts[2] = new ColonizerIndustry(game.computerShips);
     computerPlanet.inventory.material = 100;
+    game.space.planets.push(computerPlanet);
+
     for (let i = 0; i < 500; i += 1) game.update(.1);
-    const types = computerPlanet.parts.map((p) => p.constructor);
-    const hasCombat = types.some((t) => t === PlanetaryDefenseGun || t === HunterIndustry || t === BomberIndustry);
+    const combat = [PlanetaryDefenseGun, HunterIndustry, BomberIndustry];
+    const hasCombat = computerPlanet.parts.some((part) => combat.some((c) => part instanceof c));
     expect(hasCombat).toBe(true);
   });
 
@@ -588,13 +635,40 @@ describe('economy and energy', () => {
     home.setOwner(Owner.Player);
     home.setTarget(target, Owner.Player);
     const ships: Ship[] = [];
-    const colonizer = new Colonizer(new Position(-.056, 0), ships);
+    const colonizer = new Colonizer(new Position(-.25, 0), ships);
     colonizer.setHome(home);
-    colonizer.orbitAround(target.centerPosition, .056);
-    colonizer.updateBehavior(.1);
+    for (let i = 0; i < 1000 && colonizer.isAlive(); i += 1) {
+      colonizer.updateBehavior(.1);
+      colonizer.avoidPlanets([home, target]);
+      colonizer.update(.1);
+    }
     expect(target.getOwner()).toBe(Owner.Player);
     expect(target.hasSpaceport()).toBe(true);
     expect(colonizer.isAlive()).toBe(false);
+  });
+
+  it('colonizer lands at the spaceport position', () => {
+    const home = new Planet(new Position(.5, .5), .1);
+    const target = new Planet(new Position(0, 0), .1);
+    home.setOwner(Owner.Player);
+    home.setTarget(target, Owner.Player);
+    const colonizer = new Colonizer(new Position(-.25, 0), []);
+    colonizer.setHome(home);
+    let landed = false;
+    for (let i = 0; i < 1000 && colonizer.isAlive(); i += 1) {
+      const before = colonizer.isAlive();
+      colonizer.updateBehavior(.1);
+      colonizer.avoidPlanets([home, target]);
+      colonizer.update(.1);
+      if (before && !colonizer.isAlive()) landed = true;
+    }
+    expect(landed).toBe(true);
+    const spaceportAngle = -Math.PI / target.parts.length;
+    const surfaceAltitude = target.radius + colonizer.radius;
+    const expectedX = target.centerPosition.x + Math.cos(spaceportAngle) * surfaceAltitude;
+    const expectedY = target.centerPosition.y + Math.sin(spaceportAngle) * surfaceAltitude;
+    expect(colonizer.center.x).toBeCloseTo(expectedX, 3);
+    expect(colonizer.center.y).toBeCloseTo(expectedY, 3);
   });
 
   it('ship consumes energy while traveling', () => {
@@ -680,7 +754,7 @@ describe('economy and energy', () => {
     freighter.launchFrom(home, home.getSpaceportSpawnPosition());
     ships.push(freighter);
 
-    for (let i = 0; i < 400; i += 1) {
+    for (let i = 0; i < 2000; i += 1) {
       freighter.updateBehavior(.1, ships, []);
       freighter.avoidPlanets([home, destination]);
       freighter.update(.1);
@@ -710,7 +784,7 @@ describe('economy and energy', () => {
     freighter.launchFrom(home, home.getSpaceportSpawnPosition());
     ships.push(freighter);
 
-    for (let i = 0; i < 400; i += 1) {
+    for (let i = 0; i < 2000; i += 1) {
       freighter.updateBehavior(.1, ships, []);
       freighter.avoidPlanets([home, destination]);
       freighter.update(.1);
@@ -753,6 +827,35 @@ describe('economy and energy', () => {
 
     expect(home.inventory.material).toBeCloseTo(5, 0);
     expect(destination.inventory.material).toBeCloseTo(10, 0);
+  });
+
+  it('freighter aims for the destination spaceport approach point', () => {
+    const home = new Planet(new Position(0, 0), .1);
+    const destination = new Planet(new Position(.4, 0), .1);
+    home.setOwner(Owner.Player);
+    destination.setOwner(Owner.Player);
+    home.placeSpaceport([], Owner.Player);
+    destination.placeSpaceport([], Owner.Player);
+    home.setTarget(destination, Owner.Player);
+
+    const spaceportAngle = destination.getSpaceportAngle();
+    const orbitR = destination.radius * GameConstants.FreightShip.OrbitRadiusMultiplier;
+    const spaceportOrbitPoint = new Position(
+      destination.centerPosition.x + Math.cos(spaceportAngle) * orbitR,
+      destination.centerPosition.y + Math.sin(spaceportAngle) * orbitR,
+    );
+    const freighter = new FreightShip(new Position(
+      spaceportOrbitPoint.x + Math.cos(spaceportAngle) * 0.3,
+      spaceportOrbitPoint.y + Math.sin(spaceportAngle) * 0.3,
+    ));
+    freighter.setHome(home);
+    (freighter as unknown as { flightState: string }).flightState = 'toDestination';
+
+    freighter.updateBehavior(.1, [], []);
+    const aimed = freighter.center.getDirectionTo(spaceportOrbitPoint);
+    const turnTo = (freighter as unknown as { turnTo: Direction }).turnTo;
+    expect(turnTo.x).toBeCloseTo(aimed.x, 1);
+    expect(turnTo.y).toBeCloseTo(aimed.y, 1);
   });
 });
 
@@ -916,18 +1019,24 @@ describe('fog of war', () => {
     expect(fog.isShipVisible(far)).toBe(false);
   });
 
-  it('knows only the starting planet at construction and reveals its neighbour over time', () => {
+  it('pre-reveals the starting planet and its in-vision neighbours at construction', () => {
     const game = new Game(Math.random);
     const playerStart = game.space.getPlanetsThatBelongTo(Owner.Player)[0];
     expect(game.playerFog.isSeen(playerStart)).toBe(true);
-    const nearest = game.space.planets
-      .filter((p) => p !== playerStart)
-      .map((p) => ({ p, d: playerStart.centerPosition.distanceTo(p.centerPosition) }))
-      .sort((x, y) => x.d - y.d)[0];
-    expect(nearest.d).toBeLessThanOrEqual(GameConstants.FogOfWar.PlanetVisionRadius);
-    expect(game.playerFog.isDiscovered(nearest.p)).toBe(false);
-    game.update(GameConstants.FogOfWar.RevealDuration);
-    expect(game.playerFog.isSeen(nearest.p)).toBe(true);
+    const vision = GameConstants.FogOfWar.PlanetVisionRadius;
+    const inVision = game.space.planets.filter((p) => p !== playerStart
+      && playerStart.centerPosition.distanceTo(p.centerPosition) <= vision);
+    expect(inVision.length).toBeGreaterThan(0);
+    for (const neighbour of inVision) {
+      expect(game.playerFog.isSeen(neighbour)).toBe(true);
+    }
+    const beyond = game.space.planets.filter((p) => p !== playerStart
+      && playerStart.centerPosition.distanceTo(p.centerPosition) > vision);
+    if (beyond.length) {
+      expect(game.playerFog.isDiscovered(beyond[0])).toBe(false);
+      game.update(GameConstants.FogOfWar.RevealDuration);
+      expect(game.playerFog.isDiscovered(beyond[0])).toBe(false);
+    }
   });
 
   it('never lets the computer target an undiscovered planet', () => {

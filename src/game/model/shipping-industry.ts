@@ -17,7 +17,13 @@ export abstract class ShippingIndustry extends Industry {
       if (this.timeToCompletion < 0) {
         this.currentShip = this.createShip(launchPosition);
         this.currentShip.setHome(home);
-        this.currentShip.launchFrom(home, launchPosition);
+        const outward = home.centerPosition.getDirectionTo(launchPosition);
+        const orbitAltitude = home.radius * this.currentShip.orbitRadiusMultiplier;
+        const orbitLaunchPosition = new Position(
+          home.centerPosition.x + outward.x * orbitAltitude,
+          home.centerPosition.y + outward.y * orbitAltitude,
+        );
+        this.currentShip.launchFrom(home, orbitLaunchPosition);
         this.allies.push(this.currentShip);
       }
     }

@@ -11,6 +11,7 @@ export class Controller {
   private focus?: Planet;
   private selectedIndustryIndex?: number;
   private popover?: BuildMenu | SlotMenu;
+  private dragSource?: Planet;
   private readonly buildCommands: BuildCommand[];
   private readonly infoPanel: InfoPanel;
   constructor(private game: Game, private renderer: Renderer, private input: Input) {
@@ -39,6 +40,7 @@ export class Controller {
   }
   update(dt: number) {
     this.game.update(dt);
+    if (!this.input.isPointerDown()) this.dragSource = undefined;
     this.handlePointerDownSelection();
     this.handleGesture();
     this.handleKeyboardBuildCommands();
@@ -53,6 +55,7 @@ export class Controller {
     if (!planet) return;
     this.closePopover();
     this.focus = planet;
+    this.dragSource = planet;
     this.clearIndustrySelection();
     this.renderer.setSelectedPlanet(this.focus);
   }
@@ -160,4 +163,8 @@ export class Controller {
     this.renderer.setSelectedIndustry(undefined);
   }
   getFocus() { return this.focus; }
+  getDragLine(): { source: Planet; mouse: { x: number; y: number } } | undefined {
+    if (!this.input.isDragging() || !this.dragSource) return undefined;
+    return { source: this.dragSource, mouse: this.input.getMouse() };
+  }
 }

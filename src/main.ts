@@ -38,7 +38,7 @@ const frame = (now: number) => {
   const dt = running && !paused ? Math.min((now - previous) / 1000, 0.1) * speedMultiplier : 0;
   previous = now;
   controller.update(dt);
-  renderer.render(controller.getFocus());
+  renderer.render(controller.getFocus(), controller.getDragLine());
   minimap.render();
   requestAnimationFrame(frame);
 };

@@ -4,6 +4,7 @@ import { Ship, ShotEffect } from './ship.ts';
 
 export class Bomber extends Ship {
   protected override get turnSpeedDegrees() { return GameConstants.Bomber.TurnSpeedDegrees; }
+  override get orbitRadiusMultiplier() { return GameConstants.Bomber.OrbitRadiusMultiplier; }
 
   updateBehavior(dt: number): ShotEffect | undefined {
     if (!this.isAlive() || !this.home) return undefined;
@@ -12,7 +13,7 @@ export class Bomber extends Ship {
 
     this.shotCooldown = Math.max(0, this.shotCooldown - dt);
     const targetPlanet = this.home.getTargetPlanet();
-    const orbitRadius = targetPlanet.radius * GameConstants.Ship.OrbitRadiusMultiplier;
+    const orbitRadius = targetPlanet.radius * this.orbitRadiusMultiplier;
     const atOrbitRange = this.isOrbitingAround(targetPlanet.centerPosition)
       || this.center.distanceTo(targetPlanet.centerPosition) <= targetPlanet.radius * GameConstants.Ship.CloseOrbitThresholdMultiplier;
 

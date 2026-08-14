@@ -163,7 +163,11 @@ export class Minimap {
     fctx.fillStyle = Minimap.FogColor;
     fctx.fillRect(0, 0, w, h);
     fctx.globalCompositeOperation = 'destination-out';
-    fctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * offsetX, ratio * offsetY);
+    fctx.setTransform(
+      ratio * scale, 0, 0, ratio * scale,
+      ratio * (offsetX - this.bounds.minX * scale),
+      ratio * (offsetY - this.bounds.minY * scale),
+    );
     const b = this.exploredMask.getBounds();
     fctx.drawImage(this.exploredMask.getCanvas(), b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
     fctx.globalCompositeOperation = 'source-over';
